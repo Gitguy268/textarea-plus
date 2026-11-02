@@ -10,7 +10,8 @@
 import assert from 'node:assert/strict'
 import {test} from 'node:test'
 
-import {buildPrompt, NOTE_LIMIT, TOOLS} from '../../lib/writing-tools.js'
+import {buildPrompt, MODELS, NOTE_LIMIT, TOOLS} from '../../lib/writing-tools.js'
+import {MODELS as ENGINES} from '../../lib/gemma.js'
 
 test('the tool shelf is stable: unique ids, a label and an instruction each', () => {
   const ids = TOOLS.map((tool) => tool.id)
@@ -21,7 +22,7 @@ test('the tool shelf is stable: unique ids, a label and an instruction each', ()
     assert.ok(tool.instruction.trim().length > 20, `${tool.id} has an instruction`)
     // The line that stops the model translating the reader's prose into
     // English on the way out rides on every tool that rewrites text.
-    if (tool.id !== 'fix') {
+    if (tool.id !== 'fix' && !tool.image) {
       assert.match(tool.instruction, /same language/i, `${tool.id} keeps the language`)
     }
   }
@@ -84,4 +85,28 @@ test('text past the note limit is cut in plain sight, never silently', () => {
 test('a tool the panel does not ship is a thrown error, not a blank prompt', () => {
   assert.throws(() => buildPrompt('translate', 'text'), /unknown writing tool: translate/)
   assert.throws(() => buildPrompt('', 'text'), /unknown writing tool/)
+})
+
+test('an image tool sends the picture, not the note, and needs one', () => {
+  const picture = new ArrayBuffer(8)
+  const {messages, truncated} = buildPrompt('describe', 'the note is ignored', 'in French', picture)
+  assert.equal(truncated, false)
+  assert.equal(messages[0].role, 'system')
+  assert.match(messages[0].content, /Describe this image/)
+  const [image, text] = messages[1].content
+  assert.deepEqual(image, {type: 'image', data: picture})
+  assert.equal(text.text, 'Extra instructions: in French')
+  assert.ok(!JSON.stringify(messages).includes('the note is ignored'))
+
+  assert.throws(() => buildPrompt('ocr', 'text'), /choose an image first/)
+})
+
+test('every model the picker offers is one the engine can load', () => {
+  assert.deepEqual(
+    MODELS.map(({id}) => id),
+    Object.keys(ENGINES),
+    'the same ids, in the same order',
+  )
+  assert.equal(MODELS[0].id, 'gemma', 'the small model stays the default')
+  assert.deepEqual(MODELS.filter((model) => model.vision).map(({id}) => id), ['minicpm-v'])
 })

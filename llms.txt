@@ -31,10 +31,15 @@ What usually needs answering:
   days (one click brings it back), and **Backup** writes every note into a
   single ZIP in Folder sync's own file format — the copy to take before a
   browser profile goes away.
-- **Is there an AI feature, and does it phone home?** The writing tools are
+- **Is there an AI feature, and does it phone home?** Two, and neither
+  does. **Speech to text** records from the microphone or takes an audio
+  file and transcribes it with Whisper (small, or large v3 turbo on WebGPU) through a
+  vendored transformers.js, on weights committed under `models/` in
+  checksum-verified chunks; the audio never leaves the page. The writing tools are
   five one-press rewrites (improve, shorten, summarise, fix grammar, make
-  casual) with a line of your own instructions appended, run by a Gemma 3
-  270M model that ships with the repository — four chunks under `models/`,
+  casual) with a line of your own instructions appended, run by Gemma 3
+  270M, MiniCPM5 2B or MiniCPM-V 4.7 1B (which also describes and reads
+  images), all shipped with the repository in chunks under `models/`,
   each checked against a pinned SHA-256 before anything loads, fetched and
   cached by the site itself. The prompt is at most 24,000 characters of the
   note — or of just the selection, behind a second switch that ships off —

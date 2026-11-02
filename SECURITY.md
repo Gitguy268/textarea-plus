@@ -48,6 +48,11 @@ questions local ones:
   ZIP or text file renders untrusted bytes, and the parsers are the risk.
 - Cross-origin script execution, or the service worker serving one origin's
   cached shell to another.
+- Anything that lets audio leave the browser, or keeps the microphone open
+  unasked. Speech to text asks for the microphone only when Record is pressed,
+  lets go of it on Stop or when its panel closes, and transcribes on this
+  device; `Permissions-Policy` grants the microphone to this origin and no
+  other device to anyone.
 
 ## What is out of scope
 

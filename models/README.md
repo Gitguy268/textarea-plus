@@ -64,6 +64,19 @@ attribution. The GGUF conversion is lm-kit's; the terms that govern the
 weights follow them back to Google either way. Keep this file next to the
 chunks: it is the attribution and the provenance record together.
 
+The repository's MIT licence does not cover this directory. Three files here
+are what section 3.1 of the terms asks a redistributor to pass on, and they
+must stay beside the chunks wherever the chunks are served from:
+
+| File | What it is |
+|---|---|
+| `NOTICE` | The notice sentence the terms prescribe, word for word |
+| `GEMMA_TERMS.md` | A copy of the Gemma Terms of Use |
+| `GEMMA_PROHIBITED_USE_POLICY.md` | The use restrictions of section 3.2, which apply to everyone who uses these weights |
+
+The chunks are the published GGUF split on byte boundaries and nothing else;
+the weights themselves are not modified.
+
 ## Regenerating
 
 ```sh

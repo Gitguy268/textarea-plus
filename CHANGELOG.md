@@ -9,6 +9,98 @@ what is on `main` right now.
 
 ## [Unreleased]
 
+### Added
+
+- **Organise by voice** (Settings, off as it ships): after speech to text, *Organise into a board* sends what you said, with this note or all your notes, through MiniCPM5 2B on your machine. The answer is a new note, `# Organised <date>`, with a `##` topic per card, `- [ ]` and `- [x]` tasks and `- ?` questions, drawn as a board with a progress bar per topic. Ticking a box on the board ticks it in the note. The code is shared byte for byte with Xiao's voice organiser.
+- **Sticky note** (Settings, off as it ships; Chrome, Edge and Brave): the note in a small square window that stays on top of other windows. It is the same editor moved there, not a copy.
+- In Firefox the writing models run on the processor: its WebGPU ran MiniCPM5 ten times slower (0.45 against 4.7 tokens a second).
+
+- **Two more writing models**, picked in the Writing tools panel:
+  [MiniCPM5 2B](https://huggingface.co/openbmb/MiniCPM5-2B) (1.56 GB, the best
+  writing of the three) and
+  [MiniCPM-V 4.7 1B](https://huggingface.co/openbmb/MiniCPM-V-4.7-1B) (1.57 GB),
+  which reads images. With MiniCPM-V picked, **Describe image** and **Read text
+  from image** work on a picture you choose or drop on the panel, and the
+  answer goes in at the cursor. Both are Apache-2.0 and committed under
+  `models/` in checksum-verified chunks, like Gemma. Gemma stays the default.
+  `MODEL=minicpm5` or `MODEL=minicpm-v` (with `WEBGPU=1`) runs
+  `npm run check:model` against them.
+
+- **Send to a device.** Two menu rows send the open note to Textarea on another
+  device on the same Wi-Fi, and receive one. They connect over WebRTC with no
+  STUN or TURN server, so nothing leaves the network. Pairing is by QR code,
+  read with the camera (`BarcodeDetector`, or the vendored jsQR 1.4.0) or
+  pasted. The receiver accepts or declines before any of the note is sent.
+  The ideas come from LocalSend and qrcp, with no code from either.
+  `Permissions-Policy` now allows the camera for this origin.
+- **Whisper large v3 turbo** as a second speech model, picked in the Speech
+  to text panel. It runs on WebGPU, with an fp16 encoder and a 4-bit decoder
+  (1.65 GB, committed under `models/whisper-large-v3-turbo-efd60f61/` in
+  checksum-verified chunks), and is offered only where the GPU does half
+  precision. It follows
+  [lalax-systems/whisper-browser-gpu](https://github.com/lalax-systems/whisper-browser-gpu),
+  with [striimit's conversion](https://huggingface.co/striimit/whisper-large-v3-turbo-webgpu).
+  ONNX Runtime's WebGPU build comes from the same pinned package as the CPU
+  one. `WHISPER_MODEL=turbo npm run check:whisper` runs it for real.
+- **`start.command`**: double-click to serve the app on its own port and
+  open it. Opening `index.html` from disk now shows a notice explaining why
+  the editor can't start, where before it was a bare page.
+- **Speech to text.** A menu row opens a panel that records from the
+  microphone or takes an audio file and writes the words down with Whisper
+  (small, multilingual, 99 languages), on this device: a vendored
+  transformers.js on ONNX Runtime in a worker, and 249 MB of weights committed
+  under `models/` in checksum-verified chunks, fetched on the first
+  transcription and cached for offline use. The spoken language is chosen in
+  the panel and remembered; the transcript is inserted at the cursor and
+  undoes in one step. After
+  [xenova/whisper-web](https://github.com/xenova/whisper-web), without its
+  interface or its downloads from Hugging Face. `npm run check:whisper` runs
+  the real chain. The `Permissions-Policy` header now allows the microphone
+  for this origin (`microphone=(self)`), and nothing else it did not already.
+- **Tags.** `#tag` in a note is tinted, and My documents shows every tag with
+  the number of notes carrying it; a chip filters the list, and `#work` also
+  finds `#work/taxes`. Tags are read from the text, so nothing new is stored.
+  On as it ships, with a **Tags** switch in Settings for how notes draw them.
+- **Pin and archive** on every card in My documents. A pinned note comes first
+  in every order; an archived one leaves the list until `is:archived` asks for
+  it. Neither moves the note's last-edited time, and the autosave and the
+  tab-closing save both carry the marks over.
+- **Activity calendar** in My documents: twelve weeks of days, shaded by the
+  notes made or last edited on each, with a click or the date field filtering
+  to one day.
+- **Timeline** as a second way to show My documents, and a **quick capture**
+  box that saves a jotted note without putting the open one away.
+- **Saved filters**: whatever is in the search box, kept as a chip.
+- The round menu button is glass too, from the first paint.
+
+### Changed
+
+- The vendored wllama is now 3.11.0 built from `master` (`1a5687ef7c`), the
+  first build that loads MiniCPM-V 4.7. It runs the writing models on WebGPU
+  when the browser has it.
+
+- Nineteen icons are now [Aiko](https://github.com/tw93/aiko)'s filled
+  glyphs. GitHub, unlock, columns, zip, save, the QR code and the Glass drop
+  keep their Tabler and Material icons, because Aiko doesn't have them.
+  `tests/unit/icons.test.js` pins every Aiko path by hash.
+- The speech engine's worker imports its libraries inside the load. A file
+  that fails to import is now reported by name, where it used to be "the
+  speech engine could not start". The worker stitches each model file only
+  when the runtime asks for it and lets go of it once handed over, where it
+  used to stitch every file first and hold them all until the load ended.
+- A microphone that macOS withholds from the browser is now explained, with
+  where to allow it. So is one that's busy in another app. Both used to show
+  a bare error.
+- **Liquid glass reads as glass.** The panels had the refraction and nothing
+  else, which over a plain page looked like a slightly see-through box. They
+  now carry a material - a fill that thins towards one corner, a bevel lit
+  from the top left, a glare - ported from LiquidGlass-UI's stylesheet, with a
+  stronger interior blur and prism fringe from the module. A label still
+  reads 4.5:1 with the note's ink directly behind it, which has its own test.
+  `prefers-contrast: more` and forced colours get the plain panels back.
+- The search box in My documents understands `#tag`, `on:YYYY-MM-DD`,
+  `is:pinned` and `is:archived` alongside the phrase it always searched for.
+
 ### Improvements over textarea-master
 
 This repository is a rebuild of `textarea-master` at revision `a70829e`. It
@@ -17,6 +109,12 @@ began as a byte-for-byte copy; every one of the original's 250 unit tests and
 [docs/PARITY.md](docs/PARITY.md) maps each feature to the test that guards
 it. Storage keys, database names, cache names and both link formats are
 unchanged, so existing notes, settings and links carry over. What changed:
+
+**Lists and tasks**
+
+- A `- ` at the start of a line is no longer drawn as a bullet; `* ` and `+ `
+  still are. Typing `-- ` and a space writes `- [ ] ` and switches Tasks on,
+  and a task line shows its checkbox without a bullet beside it.
 
 **Structure**
 
@@ -330,6 +428,14 @@ unchanged, so existing notes, settings and links carry over. What changed:
 
 ### Changed
 
+- **Licence files for everything that is not this project's own code.** The
+  character maps and standard fonts inside the vendored pdf.js now carry their
+  own licence files, llama.cpp's MIT notice sits beside the wllama binaries,
+  the Tabler and Material Symbols licence texts are in `vendor/icons/`, and the
+  Gemma Terms of Use, its Prohibited Use Policy and the notice file the terms
+  prescribe are beside the model in `models/`. `LICENSE` says in so many words
+  that MIT covers the code and not `vendor/` or `models/`.
+
 - **Save as**, **Save as ZIP** and **Open file** are now one **Export** entry, a
   **Documents** entry and an **Open file** entry. The archive is the fourth
   destination inside the Export panel rather than a row in the menu.
@@ -372,6 +478,11 @@ unchanged, so existing notes, settings and links carry over. What changed:
 
 ### Fixed
 
+- A custom font already on the shelf from an earlier session now shows the
+  moment it is picked in Settings. Only the font the note opened in was being
+  registered, so any other one set the choice and kept the system font until
+  a reload. Removing a font, or importing its family again, now takes the old
+  face out of the page too.
 - The QR code, close and delete icons are Google's own paths in Google's own
   `viewBox`, copied verbatim rather than hand-rescaled. The rescale had mirrored
   the QR code and the trash can about the horizontal axis: the QR code's three

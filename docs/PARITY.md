@@ -76,6 +76,24 @@ tests and 105 browser tests are all still here, none deleted or weakened.
 - [x] Model chunks verified before use — U: `gemma.test.js`; `npm run check:model` for the real chain
 - [x] Panel, selection, Replace with one undo — B: the four *writing* tests
 
+## Speech to text
+
+Added to both repositories at once, so it has no upstream to be compared with; the tests are the same in each.
+
+- [x] Chunks verified and stitched, language list, mono mix — U: `whisper.test.js`
+- [x] Panel through a fake engine: language, progress, Cancel, Insert — B: *the speech panel transcribes a file through an injected engine and hands the text back*
+- [x] Menu row, no engine before audio, language remembered — B: *the speech to text row opens its panel without an engine, and the language is remembered*
+- [x] The real chain: file, microphone, offline — `npm run check:whisper`
+
+## Send to a device
+
+Added to both repositories at once, like speech to text; the tests are the same in each.
+
+- [x] Pairing codes, chunked transfer, accept first, byte cap, a webcam-sized symbol jsQR reads — U: `nearby.test.js`
+- [x] Two tabs over WebRTC, paired through the panels, accepted — B: *Send to a device carries a note to another tab over WebRTC, after it accepts* (skipped on macOS, where the firewall drops Playwright's peer traffic; passes under headless Brave)
+- [x] A code that is not one is refused — B: *Receive from a device turns away a code that is not one*
+- [ ] Camera scan on real devices — manual
+
 ## Menu, dialogs, settings
 
 - [x] Menu roles and keys — B: *the arrow keys walk the menu*, *the menu closes when the keyboard tabs away from it*, *the editor and the menu button have accessible names*
@@ -111,4 +129,72 @@ Not parity, but held to the same standard: each has a test.
 - [x] Model download progress and cancel — U: `gemma.test.js`; B: *a model download can be cancelled, and cancelling is not an error*
 - [x] Lazy file readers, export formats and sync engine — B: *startup: panels rarely opened are fetched when their entry is used*, *a reader who never asked for folder sync never loads it, and gets no database for it*
 - [x] A returning tab reopens its unfinished text — B: *a tab that closed mid-keystroke reopens on what was typed, without a second copy*
+- [x] Glass as a material, and on the menu button — B: *the glass row switches the refraction on the floating panels*, *a label on glass still reads 4.5:1 with the note’s own ink behind it*
+- [x] Tags — U: `markdown.test.js`, `filter.test.js`; B: *a tag is drawn in the note, counted in My documents, and filters the list*
+- [x] Pin — U: `library.test.js`; B: *a pinned note leads the list and stays pinned while it is typed in*
+- [x] Archive — U: `filter.test.js`; B: *an archived note leaves the list until the archive is asked for*
+- [x] Activity calendar — U: `filter.test.js`; B: *the calendar lights the days notes were written, and a day filters the list*
+- [x] Quick capture — B: *a jotted note goes into the library without leaving the panel*
+- [x] Timeline and saved filters — U: `prefs.test.js`; B: *the timeline and a saved filter are remembered across a reload*
 - [x] Firefox and WebKit — the whole suite under `BROWSER=firefox` / `BROWSER=webkit`
+
+## Added by textarea-plus
+
+Milestone 1, the app shell. Two existing tests now say what plus does instead:
+*the quick switcher jumps to a note from the keyboard and can be switched off*
+expects no "Replace the current note?" question, since the note on screen is
+already kept in the library, and *on paper there is the note and nothing else*
+also checks that the sidebar and tabs stay off the page.
+
+- [x] Sidebar views (Today, Inbox, Notes, Tasks, Projects, Meetings, Wiki) as queries over the library, nothing written into notes — U: `views.test.js`; B: *the shell: views list the notes they ask for, tabs follow the notes opened, Ctrl/Cmd+K reaches both*
+- [x] Today is the `# YYYY-MM-DD` note `text today` writes, on the local date, made once — U: `views.test.js`; B: *the shell: …*
+- [x] Tabs open after the current one, close to their neighbour, drop trashed notes — U: `views.test.js`; B: *the shell: …*
+- [x] Ctrl/Cmd+K lists notes, views and menu commands; Ctrl/Cmd+\ turns the shell off and back — B: *the shell: …*
+- [x] The shell stays off paper — B: *on paper there is the note and nothing else*
+
+Milestone 2, notes. Wikilinks now ship on, since page links, cards and the graph
+stand on them, so *a wikilink opens the note its title names, and stays text
+while it is switched off* starts the switch off itself, and following a link
+asks nothing. U: `prefs.test.js` and `markdown.test.js` state the new default and
+the card a link alone on its line becomes.
+
+- [x] Tag tree nested on the slash, each note counted once per branch — U: `views.test.js`; B: *notes: trees, folders, the slash menu, cards, images and the graph*
+- [x] Folders as a `folder:: Work/Plans` line of the note's text, files staying flat so textarea and textarea-cli keep every note — U: `views.test.js`; B: *notes: …*
+- [x] Slash menu inserting plain Markdown, never at `1/2`, a path or inside a fence; Escape leaves it as typed — U: `slash.test.js`; B: *notes: …*
+- [x] Page link cards and pictures drawn with `article.textContent` unchanged, caret and redraw beside them — U: `graph.test.js`; B: *notes: …*
+- [x] Attachments kept in their own database, referred to from the note, under 20 MB each, arriving by paste, drop or the slash menu — U: `graph.test.js`; B: *a picture arrives by paste, by drop and through the slash menu*
+- [x] Graph of wikilinks, resolving as a click does, each dot a button — U: `graph.test.js`; B: *notes: …*
+
+Not yet: attachment bytes do not travel with Folder sync, Backup or a share link
+(the reference does, and shows as text where the bytes are missing). Folder sync
+gets them in milestone 8.
+
+Milestone 3, databases. `folder::` now reads through the same property code as
+every other `key:: value` line, so `views.test.js` still states what it does, and
+a page link card skips any property line, not only the folder.
+
+- [x] A database is a note: `view::` and `query::` lines, plus `group::`, `date::`, `columns::`, `options::` and `sort::`, so it travels with Folder sync and every app reads it as a plain note — U: `database.test.js`; B: *databases: a saved query as a table, board, calendar and list, every edit a line of a note*
+- [x] Query adds `is:task`, `due:` rules, `key:value`, `-key:value` and `folder:` to the tokens My documents knows; My documents' own search is unchanged — U: `database.test.js`
+- [x] Table with sort, added columns, typed cells and date cells; board by drag and by a select on each card; month calendar by drag and by Alt+arrow; list — B: *databases: …*
+- [x] An edit rewrites one line of the note, keeping its other text, style and created date; empty takes the line out; code fences are never touched — U: `database.test.js`; B: *databases: …*
+- [x] Edits in quick succession are written in turn, a redraw never takes a half typed cell, and a note whose lines are being typed stays text until reopened — B: *databases: …*
+
+Not yet: an edit to a note open in another browser tab is not seen in that tab, whose next save
+writes its own copy back, the same limit a pin already has there.
+
+Milestone 4, tasks. Tasks now ship on, since the Tasks screen stands on them, so
+`prefs.test.js` says so, and any test that needs them off turns them off itself.
+`[/]` and `[-]` are now tasks: in progress counts as open and cancelled as finished.
+
+- [x] Obsidian Tasks syntax read and written, with every other byte of the line kept — U: `tasks.test.js`; B: *tasks: quick add, the lists, keys, repeats, a board and a timeline, every change a line of a note*
+- [x] Quick add reading dates, times, `p1` to `p4` and repeats, with a preview before Enter and "double quotes" to keep words — U: `tasks.test.js`; B: *tasks: …*
+- [x] Today, Upcoming, Anytime, Someday, Logbook; areas from an `area::` line, projects from `#project` notes — U: `tasks.test.js`; B: *tasks: …*
+- [x] Priorities and repeats, the next one above the finished one, from the screen or a tick in the note — U: `tasks.test.js`; B: *tasks: …*
+- [x] Statuses, a board, weekly cycles by scheduled date, and keys on every row — U: `tasks.test.js`; B: *tasks: …*
+- [x] List, board and timeline; a timeline bar moved by Alt and an arrow — U: `tasks.test.js`; B: *tasks: …*
+- [x] Reminders from a `⏰` date and time, once each, within a day of it — U: `tasks.test.js`; B: *tasks: …*
+- [x] A database reads the first `📅` of a note's open tasks as `due:` when it has no `due::` line — U: `tasks.test.js`
+
+Not yet: reminders only fire while a page is open; the desktop app takes that further
+in milestone 9. A timeline bar cannot be dragged. The old "Every open task" panel stays
+beside the new screen.

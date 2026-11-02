@@ -9,6 +9,7 @@
 <link rel="icon" href="favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="icon.png">
 <link rel="manifest" href="manifest.json">
+<script src="lib/file-notice.js"></script>
 <!-- The LLM-readable overview of the site, per llmstxt.org. `describedby` is
      the relation that proposal recommends, so an agent reading this page can
      find the file that describes it. -->
@@ -178,6 +179,14 @@
     cursor: pointer;
   }
 
+  /* A tag is tinted rather than padded: padding inside a line of the note
+     would move the caret off where the text says it is. */
+  .md-tag {
+    color: var(--link);
+    background: color-mix(in srgb, var(--link) 12%, transparent);
+    border-radius: 4px;
+  }
+
   /* Lists. The marker the reader typed stays in the text and is hidden, and the
      bullet is drawn instead, because article.textContent has to keep returning
      the note exactly as typed. A numbered item keeps its own marker: the number
@@ -190,6 +199,11 @@
     content: '\2022';
     color: var(--busy);
     margin-right: 0.4em;
+  }
+
+  /* A task line shows its box and nothing beside it. */
+  .md-li:has(.md-task)::before {
+    content: none;
   }
 
   .md-li-2 {
@@ -504,20 +518,135 @@
      rule. When the row is off, or a reader has asked for reduced transparency,
      the .glass class leaves the root and every rule here stops applying: the
      panels are exactly the opaque boxes they were before this existed. */
+  /* The material: what makes a translucent box read as a pane of glass. The
+     recipe is LiquidGlass-UI's (see vendor/README.md) - a fill that thins
+     towards the far corner, a bevel lit from the top left, a glare across the
+     near corner - with the fill kept thick enough that a label still reads
+     4.5:1 with the note's own ink directly behind it. The glare's angle and
+     the rim brightest at two opposite corners are liquid-glass-studio's
+     parameters, drawn here in CSS because its renderer cannot see a page. */
+  html.glass {
+    --glass-thick: 66%;
+    --glass-thin: 52%;
+    --glass-glare: rgba(255, 255, 255, 0.5);
+    --glass-bevel:
+      inset 1px 1px 0 rgba(255, 255, 255, 0.85),
+      inset -1px -1px 0 rgba(255, 255, 255, 0.45),
+      inset 0 -2px 3px rgba(26, 31, 44, 0.06);
+    --glass-shadow: 0 0 0 0.5px rgba(33, 39, 52, 0.16), 0 1px 3px rgba(33, 39, 52, 0.1), 0 14px 34px rgba(33, 39, 52, 0.18);
+
+    @media (prefers-color-scheme: dark) {
+      --glass-thick: 76%;
+      --glass-thin: 64%;
+      --glass-glare: rgba(255, 255, 255, 0.09);
+      --glass-bevel:
+        inset 1px 1px 0 rgba(255, 255, 255, 0.3),
+        inset -1px -1px 0 rgba(255, 255, 255, 0.12),
+        inset 0 -2px 3px rgba(0, 0, 0, 0.3);
+      --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 14px 34px rgba(0, 0, 0, 0.5);
+    }
+
+    &[data-theme='light'] {
+      --glass-thick: 66%;
+      --glass-thin: 52%;
+      --glass-glare: rgba(255, 255, 255, 0.5);
+      --glass-bevel:
+        inset 1px 1px 0 rgba(255, 255, 255, 0.85),
+        inset -1px -1px 0 rgba(255, 255, 255, 0.45),
+        inset 0 -2px 3px rgba(26, 31, 44, 0.06);
+      --glass-shadow: 0 0 0 0.5px rgba(33, 39, 52, 0.16), 0 1px 3px rgba(33, 39, 52, 0.1), 0 14px 34px rgba(33, 39, 52, 0.18);
+    }
+
+    &[data-theme='dark'] {
+      --glass-thick: 76%;
+      --glass-thin: 64%;
+      --glass-glare: rgba(255, 255, 255, 0.09);
+      --glass-bevel:
+        inset 1px 1px 0 rgba(255, 255, 255, 0.3),
+        inset -1px -1px 0 rgba(255, 255, 255, 0.12),
+        inset 0 -2px 3px rgba(0, 0, 0, 0.3);
+      --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 14px 34px rgba(0, 0, 0, 0.5);
+    }
+  }
+
+  /* The glare is a background layer rather than a pseudo-element: the menu
+     scrolls, and a layer stays with the box where a ::before would scroll away
+     with the rows and sit on top of them. */
   html.glass #menu,
   html.glass .dialog,
   html.glass #stats-panel,
   html.glass #backlinks-panel,
   html.glass #tasks-panel,
-  html.glass #writing-panel {
-    background: color-mix(in srgb, var(--elevated) 75%, transparent);
+  html.glass #writing-panel,
+  html.glass #speech-panel {
+    background:
+      linear-gradient(155deg, var(--glass-glare) 0%, transparent 34%),
+      linear-gradient(
+        155deg,
+        color-mix(in srgb, var(--elevated) var(--glass-thick), transparent),
+        color-mix(in srgb, var(--elevated) var(--glass-thin), transparent)
+      );
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
+    box-shadow: var(--glass-shadow), var(--glass-bevel);
+  }
+
+  /* The two surfaces that are on screen before anything is opened. The round
+     button keeps enough of its blue for the white dots to stay 3:1 against
+     it; the bubble keeps all of its colour, since its text has none to spare,
+     and takes only the bevel. Both are stylesheet alone, so neither brings
+     the refraction module into the boot. */
+  html.glass #button {
+    background:
+      linear-gradient(155deg, rgba(255, 255, 255, 0.45) 0%, transparent 46%),
+      color-mix(in srgb, var(--button-tint, #0569fa) 78%, transparent);
+    backdrop-filter: blur(4px) saturate(1.6);
+    -webkit-backdrop-filter: blur(4px) saturate(1.6);
+    box-shadow:
+      0 3px 8px rgba(0, 0, 0, 0.22),
+      0 8px 20px rgba(5, 105, 250, 0.28),
+      inset 1px 1px 0 rgba(255, 255, 255, 0.7),
+      inset -1px -1px 0 rgba(255, 255, 255, 0.3);
+  }
+
+  @media (hover) {
+    html.glass #button:hover {
+      --button-tint: #3c86f3;
+    }
+  }
+
+  html.glass #notification {
+    box-shadow:
+      0 6px 18px rgba(0, 0, 0, 0.18),
+      inset 1px 1px 0 rgba(255, 255, 255, 0.55),
+      inset -1px -1px 0 rgba(255, 255, 255, 0.2);
+  }
+
+  /* A reader who asked for more contrast, or for the system's own colours,
+     gets the plain panels back whatever the Glass row says. */
+  @media (prefers-contrast: more), (forced-colors: active) {
+    html.glass #menu,
+    html.glass .dialog,
+    html.glass #stats-panel,
+    html.glass #backlinks-panel,
+    html.glass #tasks-panel,
+    html.glass #writing-panel,
+    html.glass #speech-panel {
+      background: var(--elevated);
+    }
+
+    html.glass #button {
+      background: #0569fa;
+    }
   }
 
   /* ---------------------------------------------------------------- dialogs */
 
   .dialog {
+    /* The reset at the top of this sheet zeroes every margin, the browser's
+       own `margin: auto` on a modal dialog included - which is what centres
+       one. Without this line every dialog opens in the top left corner. */
+    margin: auto;
     padding: 0;
     border: none;
     border-radius: 14px;
@@ -713,6 +842,37 @@
      buttons to sit on one line each, so it is not much narrower. */
   .dialog-qr {
     max-width: min(94vw, 400px);
+  }
+
+  /* The nearby-device panel: a camera view and a paste box under the code. */
+  .nearby-camera {
+    display: block;
+    width: 100%;
+    max-height: 40dvh;
+    border-radius: 10px;
+    background: #000;
+    object-fit: cover;
+  }
+
+  .nearby-entry {
+    display: grid;
+    gap: 6px;
+  }
+
+  .nearby-entry[hidden],
+  .nearby-camera[hidden],
+  .qr-figure[hidden] {
+    display: none;
+  }
+
+  .nearby-input {
+    font: 13px / 1.4 ui-monospace, monospace;
+    padding: 6px 8px;
+    border: 1px solid var(--overlay);
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    min-width: 0;
   }
 
   /* Three buttons, one of them two words long. */
@@ -1098,6 +1258,221 @@
   .document-delete:focus-visible {
     outline: 2px solid var(--outline);
     outline-offset: 2px;
+  }
+
+  /* Pin and archive: the delete button's two neighbours on the top edge of
+     the card, same size and same quiet. A mark that is set stays lit. */
+  .document-mark {
+    position: absolute;
+    top: 12px;
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    background: rgba(0, 0, 0, 0.07);
+    border: none;
+    border-radius: 999px;
+    color: #1c1c1c;
+    cursor: pointer;
+    opacity: 0.55;
+    touch-action: manipulation;
+  }
+
+  .document-pinned {
+    right: 80px;
+  }
+
+  .document-archived {
+    right: 46px;
+  }
+
+  .document-mark:hover,
+  .document-mark[aria-pressed='true'] {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.16);
+  }
+
+  .document-mark:focus-visible {
+    outline: 2px solid var(--outline);
+    outline-offset: 2px;
+  }
+
+  /* The "open" badge and the marks share the top edge; on a pinned or narrow
+     card the badge would sit under the pin, so it drops to the bottom left. */
+  .document-row[data-current='true']::after {
+    top: auto;
+    bottom: 12px;
+  }
+
+  /* ------------------------------------- capture, filters and the calendar */
+
+  .library-capture {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+  }
+
+  .library-jot {
+    flex: 1;
+    min-width: 0;
+    font: 16px / 1.4 system-ui;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--text) 25%, transparent);
+    border-radius: 8px;
+    padding: 8px 12px;
+    resize: vertical;
+  }
+
+  .library-jot::placeholder {
+    color: var(--text);
+    opacity: 0.64;
+  }
+
+  .library-tools {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .library-shelf {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .library-activity {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  /* Twelve weeks, a column each, Monday at the top. */
+  .library-calendar {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(7, 11px);
+    grid-auto-columns: 11px;
+    gap: 3px;
+  }
+
+  .library-calendar span {
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--text) 9%, transparent);
+  }
+
+  .library-calendar span[data-level='1'] {
+    background: color-mix(in srgb, var(--outline) 35%, transparent);
+  }
+
+  .library-calendar span[data-level='2'] {
+    background: color-mix(in srgb, var(--outline) 55%, transparent);
+  }
+
+  .library-calendar span[data-level='3'] {
+    background: color-mix(in srgb, var(--outline) 78%, transparent);
+  }
+
+  .library-calendar span[data-level='4'] {
+    background: var(--outline);
+  }
+
+  .library-calendar span:not([data-level='0']) {
+    cursor: pointer;
+  }
+
+  .library-calendar span[data-current='true'] {
+    outline: 2px solid var(--text);
+    outline-offset: 1px;
+  }
+
+  .library-day {
+    font: 13px / 1.3 system-ui;
+    color: inherit;
+    background: transparent;
+    border: 1px solid color-mix(in srgb, var(--text) 28%, transparent);
+    border-radius: 8px;
+    padding: 4px 8px;
+  }
+
+  .library-chips {
+    flex: 1;
+    min-width: 180px;
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+    max-height: 132px;
+    overflow-y: auto;
+  }
+
+  .library-chip {
+    font: 13px / 1 system-ui;
+    color: var(--text);
+    background: var(--overlay);
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 6px 10px;
+    min-height: 26px;
+    cursor: pointer;
+  }
+
+  .library-chip[aria-pressed='true'] {
+    border-color: var(--outline);
+    background: color-mix(in srgb, var(--outline) 18%, transparent);
+  }
+
+  .library-chip-saved {
+    font-weight: 600;
+  }
+
+  .library-chip-save {
+    background: transparent;
+    border: 1px dashed color-mix(in srgb, var(--text) 40%, transparent);
+  }
+
+  .library-chip-remove {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    margin-left: -4px;
+    color: var(--text);
+    background: transparent;
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    opacity: 0.6;
+  }
+
+  .library-chip-remove:hover {
+    opacity: 1;
+    background: var(--overlay);
+  }
+
+  .library-chip:focus-visible,
+  .library-chip-remove:focus-visible {
+    outline: 2px solid var(--outline);
+    outline-offset: 2px;
+  }
+
+  /* The timeline: one column, and each card as tall as its note asks for
+     rather than square, with the text set as text. */
+  .document-list[data-view='timeline'] {
+    grid-template-columns: 1fr;
+  }
+
+  .document-list[data-view='timeline'] .document-open {
+    aspect-ratio: auto;
+    justify-content: flex-start;
+    text-align: left;
+    padding: 48px 14px 30px;
+  }
+
+  .document-list[data-view='timeline'] .document-preview {
+    -webkit-line-clamp: 12;
+    white-space: pre-wrap;
   }
 
   .document-delete:disabled {
@@ -1537,7 +1912,8 @@
      corner at top:17px and a save would otherwise land on this panel's
      title every few seconds. z-index matches the other panels, so a tall
      notification still floats over it while it is on screen. */
-  #writing-panel {
+  #writing-panel,
+  #speech-panel {
     position: fixed;
     right: 16px;
     top: 68px;
@@ -1652,6 +2028,226 @@
     width: 100%;
   }
 
+  .writing-choose {
+    width: 100%;
+    margin-bottom: 8px;
+  }
+
+  /* No display rule, like .writing-output: the image toggles `hidden`. */
+  .writing-preview {
+    max-width: 100%;
+    max-height: 160px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+  }
+
+  /* ------------------------------------------------- speech to text */
+
+  /* The writing tools' panel in everything but its corner: bottom right,
+     above the menu button, the one corner no other panel owns. The menu
+     opens over it, the way the tasks panel opens over the backlinks. */
+  #speech-panel {
+    top: auto;
+    bottom: 77px;
+  }
+
+  .speech-language,
+  .writing-model {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
+    font: 13px / 1.4 system-ui;
+  }
+
+  .speech-language select,
+  .writing-model select {
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+  }
+
+  .speech-actions {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .speech-actions .dialog-button {
+    flex: 1;
+  }
+
+  .speech-organise {
+    margin-top: 8px;
+    width: 100%;
+  }
+
+  .speech-all-notes {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-top: 6px;
+    font: 13px / 1.4 system-ui;
+  }
+
+  /* The sticky note window (lib/sticky.js): the note alone, small type, no
+     column - the window is the page. */
+  html.sticky body {
+    margin: 0;
+  }
+
+  html.sticky article {
+    box-sizing: border-box;
+    width: 100vw;
+    min-height: 100vh;
+    max-width: none;
+    margin: 0;
+    padding: 14px 16px;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  /* ------------------------------------------------------------ board */
+
+  /* An organised note, drawn as cards. Top left with the backlinks and the
+     tasks, which it opens over: all three answer "what is in my notes". */
+  #board-panel {
+    position: fixed;
+    left: 16px;
+    top: 68px;
+    z-index: 1;
+    width: min(380px, calc(100vw - 32px));
+    max-height: min(78dvh, 640px);
+    overflow-y: auto;
+    padding: 10px 14px 14px;
+    background: var(--elevated);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
+    color: var(--text);
+  }
+
+  .board-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .board-title {
+    margin: 0;
+    font: 600 15px / 1.3 system-ui;
+    opacity: 0.75;
+  }
+
+  .board-close {
+    font: 20px / 1 system-ui;
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 4px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .board-close:hover {
+    background: var(--overlay);
+  }
+
+  .board-cards {
+    display: grid;
+    gap: 10px;
+  }
+
+  .board-card {
+    padding: 10px 12px 8px;
+    border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+    border-radius: 10px;
+  }
+
+  .board-topic {
+    margin: 0 0 6px;
+    font: 600 15px / 1.3 system-ui;
+  }
+
+  .board-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font: 12px / 1.3 system-ui;
+    opacity: 0.8;
+  }
+
+  .board-progress progress {
+    flex: 1;
+    height: 6px;
+    appearance: none;
+    border: 0;
+    border-radius: 3px;
+    background: var(--overlay);
+    overflow: hidden;
+    accent-color: var(--text);
+  }
+
+  .board-progress progress::-webkit-progress-bar {
+    background: var(--overlay);
+  }
+
+  .board-progress progress::-webkit-progress-value {
+    background: var(--text);
+  }
+
+  .board-progress progress::-moz-progress-bar {
+    background: var(--text);
+  }
+
+  .board-items {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font: 14px / 1.45 system-ui;
+  }
+
+  .board-item {
+    display: flex;
+    gap: 6px;
+    padding: 2px 0;
+  }
+
+  .board-item label {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    cursor: pointer;
+  }
+
+  .board-item input:focus-visible,
+  .board-close:focus-visible {
+    outline: 2px solid var(--outline);
+    outline-offset: 2px;
+  }
+
+  .board-done span {
+    opacity: 0.55;
+    text-decoration: line-through;
+  }
+
+  .board-note {
+    opacity: 0.8;
+    padding-left: 22px;
+  }
+
+  .board-mark {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+    font: 700 11px / 13px system-ui;
+    text-align: center;
+  }
+
   /* A reader who asks for less motion gets none that is decoration: the
      ripple, the menu's slide and the fades all land at once. Delays are left
      alone, because the menu's visibility flip is timed with one. */
@@ -1711,6 +2307,874 @@
       break-inside: avoid;
     }
   }
+
+  /* textarea-plus: the shell. The sidebar is fixed on the left and the page
+     moves over by its width; the tabs are a sticky strip above the article.
+     Neither touches <main> or the article's own box, so with the shell off
+     (Ctrl/Cmd+\) the page is exactly the one-note editor again. */
+  html {
+    --sidebar-width: 0px;
+  }
+
+  html.shell {
+    --sidebar-width: 248px;
+  }
+
+  html.shell body {
+    padding-left: var(--sidebar-width);
+  }
+
+  html.shell article {
+    padding-inline: max(18px, calc((100vw - var(--sidebar-width)) / 2 - 400px));
+    min-height: calc(100dvh - 41px);
+  }
+
+  #sidebar,
+  #tabs {
+    display: none;
+    font: 14px/1.4 system-ui, sans-serif;
+  }
+
+  html.shell #sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    position: fixed;
+    inset-block: 0;
+    left: 0;
+    width: var(--sidebar-width);
+    overflow-y: auto;
+    padding: 12px 10px 16px;
+    background-color: color-mix(in srgb, var(--overlay) 100%, var(--elevated));
+    border-right: 1px solid var(--overlay);
+    z-index: 2;
+  }
+
+  html.shell #tabs {
+    display: flex;
+    align-items: stretch;
+    gap: 2px;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    height: 41px;
+    padding: 4px 8px 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    background-color: color-mix(in srgb, var(--elevated) 94%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--overlay);
+  }
+
+  #sidebar ul {
+    list-style: none;
+  }
+
+  #sidebar button,
+  #tabs button,
+  #shell-toggle {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  #sidebar button:focus-visible,
+  #tabs button:focus-visible,
+  #shell-toggle:focus-visible {
+    outline: 2px solid var(--outline);
+    outline-offset: -2px;
+  }
+
+  .sidebar-search,
+  .sidebar-view,
+  .sidebar-note,
+  .sidebar-new,
+  .sidebar-more {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 8px;
+  }
+
+  .sidebar-search {
+    margin-bottom: 8px;
+    border: 1px solid var(--overlay) !important;
+    opacity: 0.75;
+  }
+
+  .sidebar-search kbd {
+    margin-left: auto;
+    font: inherit;
+    font-size: 12px;
+    opacity: 0.8;
+  }
+
+  .sidebar-note {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block !important;
+  }
+
+  @media (hover) {
+    #sidebar button:hover,
+    #tabs button:hover,
+    #shell-toggle:hover {
+      background-color: var(--overlay);
+    }
+  }
+
+  .sidebar-view[aria-current],
+  .sidebar-note[aria-current] {
+    background-color: var(--overlay);
+    font-weight: 600;
+  }
+
+  .sidebar-count {
+    margin-left: auto;
+    font-size: 12px;
+    opacity: 0.6;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sidebar-heading {
+    margin: 16px 8px 4px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    opacity: 0.6;
+  }
+
+  .sidebar-empty {
+    margin: 4px 8px;
+    font-size: 13px;
+    opacity: 0.65;
+  }
+
+  .sidebar-more {
+    color: var(--link) !important;
+  }
+
+  .sidebar-new {
+    margin-top: auto;
+    padding-top: 12px !important;
+    opacity: 0.8;
+  }
+
+  .tab {
+    display: flex;
+    align-items: center;
+    max-width: 220px;
+    flex-shrink: 0;
+    border-radius: 6px 6px 0 0;
+  }
+
+  .tab:has([aria-current]) {
+    background-color: var(--overlay);
+  }
+
+  .tab-open {
+    padding: 0 10px;
+    height: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.7;
+  }
+
+  .tab-open[aria-current] {
+    opacity: 1;
+  }
+
+  .tab-close {
+    width: 24px;
+    height: 24px;
+    margin-right: 4px;
+    text-align: center !important;
+    opacity: 0.5;
+  }
+
+  .tabs-toggle,
+  .tabs-new {
+    width: 32px;
+    flex-shrink: 0;
+    text-align: center !important;
+    opacity: 0.7;
+  }
+
+  #shell-toggle {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    width: 32px;
+    height: 32px;
+    text-align: center;
+    opacity: 0.45;
+    z-index: 1;
+  }
+
+  html.shell #shell-toggle {
+    display: none;
+  }
+
+  /* The floating panels that sit top left move out from under the shell. */
+  html.shell #tasks-panel,
+  html.shell #backlinks-panel {
+    left: calc(var(--sidebar-width) + 16px);
+    top: 56px;
+  }
+
+  html.glass.shell #sidebar {
+    background:
+      linear-gradient(155deg, var(--glass-glare) 0%, transparent 34%),
+      color-mix(in srgb, var(--elevated) var(--glass-thick), transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  /* A narrow window: no room beside the note, so the sidebar comes in over
+     it when asked for, and goes again on Escape or a pick. */
+  @media (max-width: 759px) {
+    html.shell {
+      --sidebar-width: 0px;
+    }
+
+    html.shell #sidebar {
+      display: none;
+    }
+
+    html.shell.sidebar-peek #sidebar {
+      display: flex;
+      width: min(280px, 85vw);
+      background-color: var(--elevated);
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.25);
+      z-index: 3;
+    }
+  }
+
+  @media print {
+    html.shell body {
+      padding-left: 0;
+    }
+
+    html.shell article {
+      padding: 0;
+      min-height: 0;
+    }
+  }
+
+  /* textarea-plus, milestone 2: trees in the sidebar, cards, images, the slash
+     menu and the graph. */
+  .sidebar-tree {
+    padding-left: 0;
+  }
+
+  .sidebar-tree .sidebar-tree {
+    padding-left: 12px;
+  }
+
+  .sidebar-branch {
+    display: flex;
+    align-items: center;
+  }
+
+  .sidebar-fold {
+    flex: 0 0 18px;
+    padding: 0 !important;
+    text-align: center !important;
+    opacity: 0.6;
+  }
+
+  .sidebar-fold-gap {
+    flex: 0 0 18px;
+  }
+
+  .sidebar-graph {
+    margin-top: auto;
+    padding: 5px 8px;
+    opacity: 0.8;
+  }
+
+  .sidebar-graph + .sidebar-new {
+    margin-top: 0;
+    padding-top: 5px !important;
+  }
+
+  article .md-card {
+    display: inline-block;
+    min-width: min(320px, 100%);
+    padding: 8px 14px;
+    border: 1px solid var(--overlay);
+    border-radius: 10px;
+    background-color: var(--overlay);
+    color: inherit;
+    text-decoration: none;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  article .md-card::after {
+    content: attr(data-preview);
+    display: block;
+    font-size: 0.8em;
+    font-weight: 400;
+    opacity: 0.65;
+    white-space: normal;
+  }
+
+  article .md-image {
+    font-size: 0.75em;
+    opacity: 0.6;
+  }
+
+  article .md-image::after {
+    content: '';
+    display: block;
+    height: min(360px, 50vh);
+    background: var(--image, none) left center / contain no-repeat;
+  }
+
+  article .md-image:not([style])::after {
+    display: none;
+  }
+
+  #slash-menu {
+    position: fixed;
+    z-index: 4;
+    width: 230px;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 4px;
+    list-style: none;
+    font: 14px/1.4 system-ui, sans-serif;
+    color: var(--text);
+    background-color: var(--elevated);
+    border: 1px solid var(--overlay);
+    border-radius: 10px;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.18);
+  }
+
+  #slash-menu li {
+    padding: 5px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  #slash-menu li[aria-selected='true'] {
+    background-color: var(--overlay);
+    font-weight: 600;
+  }
+
+  .dialog.dialog-graph {
+    width: min(900px, 94vw);
+    max-width: none;
+    padding: 20px 24px;
+  }
+
+  .graph {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .graph line {
+    stroke: currentColor;
+    stroke-opacity: 0.25;
+  }
+
+  .graph-node {
+    cursor: pointer;
+    outline: none;
+  }
+
+  .graph-node circle {
+    fill: var(--link);
+  }
+
+  .graph-current circle {
+    fill: var(--danger);
+  }
+
+  .graph-node .graph-target {
+    fill: transparent;
+  }
+
+  .graph-node:focus-visible circle {
+    stroke: var(--outline);
+    stroke-width: 3;
+  }
+
+  .graph-node text {
+    fill: currentColor;
+    font: 13px system-ui, sans-serif;
+    text-anchor: middle;
+  }
+
+  .graph-close {
+    margin-top: 8px;
+  }
+
+  @media print {
+    article .md-image::after {
+      display: none;
+    }
+  }
+  /* textarea-plus, milestone 3: a database takes the article's place while the
+     note open is one. Everything in it is drawn from the note and the library. */
+  #database,
+  #database-show[hidden] {
+    display: none;
+  }
+
+  html.database-open article {
+    display: none;
+  }
+
+  html.database-open #database {
+    display: block;
+    padding: 24px max(18px, calc((100vw - var(--sidebar-width)) / 2 - 560px));
+    min-height: calc(100dvh - 41px);
+    font: 14px/1.4 system-ui, sans-serif;
+  }
+
+  #database-show {
+    position: fixed;
+    top: 48px;
+    right: 12px;
+    z-index: 1;
+    padding: 4px 10px;
+    color: inherit;
+    font: 13px system-ui, sans-serif;
+    background: var(--elevated);
+    border: 1px solid var(--overlay);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  .database-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 12px;
+    margin-bottom: 16px;
+  }
+
+  .database-title {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.25;
+  }
+
+  .database-count,
+  .database-hint,
+  .database-empty,
+  .database-card-line,
+  .database-field span,
+  .database-weekday {
+    opacity: 0.65;
+  }
+
+  .database-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    width: 100%;
+  }
+
+  #database input,
+  #database select,
+  #tasks input,
+  #tasks select {
+    box-sizing: border-box;
+    min-height: 30px;
+    padding: 3px 6px;
+    color: inherit;
+    font: inherit;
+    background: transparent;
+    border: 1px solid var(--overlay);
+    border-radius: 5px;
+  }
+
+  #database select option,
+  #tasks select option {
+    color: var(--text);
+    background: var(--elevated);
+  }
+
+  .database-query {
+    flex: 1 1 240px;
+  }
+
+  .database-button {
+    min-height: 30px;
+    padding: 3px 8px;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    background: var(--overlay);
+    border: 0;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+
+  #database input:focus-visible,
+  #database select:focus-visible,
+  #tasks input:focus-visible,
+  #tasks select:focus-visible,
+  .database-button:focus-visible {
+    outline: 2px solid var(--outline);
+    outline-offset: -1px;
+  }
+
+  .database-scroll {
+    overflow-x: auto;
+  }
+
+  .database-table {
+    width: 100%;
+    margin-bottom: 10px;
+    border-collapse: collapse;
+  }
+
+  .database-table th,
+  .database-table td {
+    padding: 3px 4px;
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--overlay);
+  }
+
+  .database-table thead .database-button,
+  .database-table tbody th .database-button,
+  .database-list .database-button,
+  .database-card > .database-button {
+    background: transparent;
+  }
+
+  .database-table thead .database-button {
+    font-weight: 600;
+  }
+
+  .database-table tbody th .database-button,
+  .database-list li > .database-button,
+  .database-card > .database-button {
+    color: var(--link);
+    white-space: normal;
+  }
+
+  .database-cell {
+    width: 100%;
+    min-width: 110px;
+  }
+
+  .database-list {
+    margin: 0 0 10px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .database-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--overlay);
+  }
+
+  .database-list .database-cell {
+    width: auto;
+  }
+
+  .database-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .database-board {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    overflow-x: auto;
+    padding-block: 10px;
+  }
+
+  .database-lane {
+    flex: 0 0 240px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    background: var(--overlay);
+    border-radius: 8px;
+  }
+
+  .database-lane-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .database-card {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    background: var(--elevated);
+    border-radius: 6px;
+    cursor: grab;
+  }
+
+  .database-card-line {
+    margin: 0;
+    padding: 0 8px;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  .database-month {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .database-month-name {
+    margin: 0 6px;
+    font-size: 16px;
+  }
+
+  .database-days {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 2px;
+  }
+
+  .database-weekday {
+    padding: 2px 4px;
+    font-size: 12px;
+  }
+
+  .database-day {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 76px;
+    padding: 2px;
+    background: var(--overlay);
+    border-radius: 4px;
+  }
+
+  .database-day-out {
+    opacity: 0.5;
+  }
+
+  .database-today {
+    outline: 2px solid var(--outline);
+    outline-offset: -2px;
+  }
+
+  .database-day > .database-button:first-child {
+    align-self: flex-start;
+    min-height: 24px;
+    padding: 0 6px;
+    background: transparent;
+  }
+
+  .database-button.database-chip {
+    min-height: 24px;
+    padding: 1px 5px;
+    overflow: hidden;
+    font-size: 12px;
+    color: var(--elevated);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    background: var(--link);
+  }
+
+  @media print {
+    html.database-open #database {
+      padding: 0;
+    }
+  }
+  /* textarea-plus, milestone 4: the Tasks screen over the note, a drawn box for
+     a task in progress or cancelled in the note itself. */
+  .md-task-doing::before {
+    content: '\2022';
+    color: var(--link);
+    font-weight: 700;
+  }
+
+  .md-task-cancelled::before {
+    content: '\00d7';
+  }
+
+  .md-li:has(.md-task-cancelled) {
+    text-decoration: line-through;
+  }
+
+  #tasks {
+    display: none;
+  }
+
+  html.tasks-open article,
+  html.tasks-open #database,
+  html.tasks-open #database-show {
+    display: none;
+  }
+
+  html.tasks-open #tasks {
+    display: block;
+    padding: 24px max(18px, calc((100vw - var(--sidebar-width)) / 2 - 480px));
+    min-height: calc(100dvh - 41px);
+    font: 14px/1.4 system-ui, sans-serif;
+  }
+
+  #tasks .tasks-add-input {
+    width: 100%;
+    min-height: 38px;
+    padding: 6px 10px;
+    font-size: 15px;
+  }
+
+  .tasks-add-preview {
+    min-height: 1.4em;
+    margin: 4px 0 8px;
+    font-size: 12px;
+    opacity: 0.7;
+  }
+
+  .tasks-bar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .tasks-lists,
+  .tasks-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .tasks-lists .database-button {
+    background: transparent;
+  }
+
+  .tasks-lists .database-button[aria-current] {
+    font-weight: 600;
+    background: var(--overlay);
+  }
+
+  .tasks-heading {
+    margin: 16px 0 4px;
+  }
+
+  .task-rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .task-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 4px;
+    border-bottom: 1px solid var(--overlay);
+    border-radius: 4px;
+  }
+
+  .task-row:focus-visible {
+    outline: 2px solid var(--outline);
+    outline-offset: -2px;
+  }
+
+  #tasks .task-box {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    min-height: 0;
+    margin: 7px 2px;
+  }
+
+  .task-words .database-button {
+    min-height: 0;
+    padding: 3px 0;
+    background: transparent;
+    white-space: normal;
+  }
+
+  .task-closed .task-words {
+    opacity: 0.6;
+  }
+
+  .task-meta {
+    margin: 0;
+    font-size: 12px;
+    opacity: 0.65;
+  }
+
+  #tasks .database-hint {
+    margin-top: 16px;
+    font-size: 12px;
+  }
+
+  .timeline {
+    display: grid;
+    gap: 2px 0;
+    min-width: 720px;
+    align-items: center;
+  }
+
+  .timeline-day {
+    grid-row: 1;
+    font-size: 11px;
+    text-align: center;
+    opacity: 0.6;
+  }
+
+  .timeline-now {
+    font-weight: 700;
+    color: var(--link);
+    opacity: 1;
+  }
+
+  .timeline-label {
+    grid-column: 1;
+    padding-right: 8px;
+    overflow: hidden;
+    font-size: 13px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .database-button.timeline-bar {
+    min-width: 0;
+    min-height: 22px;
+    padding: 0 6px;
+    overflow: hidden;
+    /* The label column says it: a day's bar has no room to. The words stay its name. */
+    color: transparent;
+    white-space: nowrap;
+    background: var(--link);
+  }
+
+  #tasks .database-lane {
+    flex: 1 1 200px;
+  }
+
 </style>
 <!-- role=textbox with aria-multiline is the correct mapping for a
      contenteditable element, and it needs a name to be announced at all. -->
@@ -1768,6 +3232,18 @@
       <use xlink:href="#icon-download"></use>
     </svg>
     Export
+  </button>
+  <button id="menu-send" class="item" type="button" role="menuitem">
+    <svg aria-hidden="true" focusable="false" width="22" height="22">
+      <use xlink:href="#icon-qr"></use>
+    </svg>
+    Send to a device
+  </button>
+  <button id="menu-receive" class="item" type="button" role="menuitem">
+    <svg aria-hidden="true" focusable="false" width="22" height="22">
+      <use xlink:href="#icon-qr"></use>
+    </svg>
+    Receive from a device
   </button>
   <button id="menu-documents" class="item" type="button" role="menuitem">
     <svg aria-hidden="true" focusable="false" width="22" height="22">
@@ -1829,6 +3305,18 @@
     </svg>
     <span id="menu-writing-label">Writing tools</span>
   </button>
+  <button id="menu-speech" class="item" type="button" role="menuitem">
+    <svg aria-hidden="true" focusable="false" width="22" height="22">
+      <use xlink:href="#icon-microphone"></use>
+    </svg>
+    Speech to text
+  </button>
+  <button id="menu-sticky" class="item" type="button" role="menuitem" hidden>
+    <svg aria-hidden="true" focusable="false" width="22" height="22">
+      <use xlink:href="#icon-pin"></use>
+    </svg>
+    Sticky note
+  </button>
   <button id="menu-theme" class="item" type="button" role="menuitem">
     <svg aria-hidden="true" focusable="false" width="22" height="22">
       <use xlink:href="#icon-theme"></use>
@@ -1871,20 +3359,17 @@
 <div id="notification" class="noprint" role="status" aria-live="polite"></div>
 <script type="module" src="app.js"></script>
 <svg style="display: none" aria-hidden="true" focusable="false">
-  <symbol id="icon-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"
-          class="icon icon-tabler icons-tabler-outline icon-tabler-plus">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M12 5l0 14"/>
-    <path d="M5 12l14 0"/>
+  <!-- Most icons are Aiko's (github.com/tw93/aiko, assets/icons.svg at
+       6ae2c093, MIT): filled glyphs, copied path for path with Aiko's own
+       viewBox and fill rules, under this page's icon-* names. Aiko has no
+       GitHub mark, open lock, columns, zip, floppy, QR code or drop, so those
+       seven keep the tabler outline (1.25 stroke) and Material symbols they
+       had. tests/unit/icons.test.js pins every one of them. -->
+  <symbol id="icon-plus" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M9.335 16.5v-5.835H3.5a.665.665 0 1 1 0-1.33h5.835V3.5a.665.665 0 0 1 1.33 0v5.835H16.5l.134.014a.665.665 0 0 1 0 1.302l-.134.014h-5.835V16.5a.665.665 0 1 1-1.33 0"/>
   </symbol>
-  <symbol id="icon-share" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.25"
-          stroke-linecap="round"
-          stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M8 9h-1a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-8a2 2 0 0 0 -2 -2h-1"/>
-    <path d="M12 14v-11"/>
-    <path d="M9 6l3 -3l3 3"/>
+  <symbol id="icon-share" viewBox="0 0 20 20" fill="currentColor" stroke="none" fill-rule="evenodd" clip-rule="evenodd">
+    <path d="M3.747 9.429a.664.664 0 0 0 .839-.424 5.72 5.72 0 0 1 3.043-3.403 2.652 2.652 0 0 0 5.028-1.181 2.652 2.652 0 0 0-5.302-.147A7.05 7.05 0 0 0 3.323 8.59a.664.664 0 0 0 .424.839m7.58-5.008a1.324 1.324 0 1 0-2.648 0 1.324 1.324 0 0 0 2.648 0M14.462 7.234a5.67 5.67 0 0 1 1.217 4.088 2.654 2.654 0 1 0 1.288.432q.065-.476.066-.968c0-1.656-.573-3.18-1.531-4.38l-.196-.236-.099-.093a.665.665 0 0 0-.982.856l.078.11zm1.71 5.588a1.324 1.324 0 1 0-1.322 2.295 1.324 1.324 0 0 0 1.323-2.295M6.787 12.643a2.654 2.654 0 1 0-4.597 2.653 2.65 2.65 0 0 0 3.497 1.037 7 7 0 0 0 5.633 1.36.665.665 0 0 0-.248-1.306q-.519.099-1.069.1A5.67 5.67 0 0 1 6.7 15.432a2.65 2.65 0 0 0 .087-2.79m-1.151.664a1.324 1.324 0 1 0-2.294 1.324 1.324 1.324 0 0 0 2.294-1.324"/>
   </symbol>
   <symbol id="icon-github" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
@@ -1892,24 +3377,15 @@
     <path
       d="M9 19c-4.3 1.4 -4.3 -2.5 -6 -3m12 5v-3.5c0 -1 .1 -1.4 -.5 -2c2.8 -.3 5.5 -1.4 5.5 -6a4.6 4.6 0 0 0 -1.3 -3.2a4.2 4.2 0 0 0 -.1 -3.2s-1.1 -.3 -3.5 1.3a12.3 12.3 0 0 0 -6.2 0c-2.4 -1.6 -3.5 -1.3 -3.5 -1.3a4.2 4.2 0 0 0 -.1 3.2a4.6 4.6 0 0 0 -1.3 3.2c0 4.6 2.7 5.7 5.5 6c-.6 .6 -.6 1.2 -.5 2v3.5"/>
   </symbol>
-  <symbol id="icon-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M3 7a2 2 0 0 1 2 -2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2z"/>
+  <symbol id="icon-folder" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M16.618 9.332H3.382V12.7c0 .675 0 1.144.03 1.508.03.357.083.558.16.708l.067.12c.167.273.408.496.695.643l.123.052c.137.05.317.085.585.107.364.03.833.03 1.508.03h6.9c.675 0 1.144 0 1.508-.03.357-.03.558-.083.708-.16l.12-.067c.273-.167.496-.408.643-.695l.052-.123c.05-.137.085-.317.107-.585.03-.364.03-.833.03-1.508zm1.264 3.368c0 .655 0 1.184-.034 1.612-.031.38-.094.723-.23 1.043l-.064.135c-.252.495-.636.91-1.107 1.199l-.207.115c-.358.182-.743.258-1.178.294-.428.035-.957.034-1.612.034h-6.9c-.655 0-1.184 0-1.612-.034-.38-.031-.723-.094-1.042-.23l-.136-.064a3 3 0 0 1-1.198-1.107l-.116-.207c-.182-.358-.258-.743-.294-1.178-.035-.428-.034-.957-.034-1.612V7.3c0-.655 0-1.184.034-1.612.036-.435.112-.82.294-1.178l.116-.207A3 3 0 0 1 3.76 3.196l.136-.063c.32-.137.662-.2 1.042-.23.428-.036.957-.035 1.612-.035h.695c.144 0 .242 0 .339.006l.251.026c.58.085 1.125.338 1.565.73l.244.238c.111.113.15.15.186.183l.112.093c.272.204.6.325.94.346l.263.003h2.305c.655 0 1.184 0 1.612.034.435.036.82.112 1.178.294l.207.116c.471.288.855.703 1.107 1.198l.063.136c.137.32.2.662.23 1.042.036.428.035.957.035 1.612zm-14.5-4.632h13.232a10 10 0 0 0-.026-.651 2.3 2.3 0 0 0-.107-.585l-.052-.123a1.75 1.75 0 0 0-.643-.695l-.12-.068c-.15-.076-.351-.13-.708-.159-.364-.03-.833-.03-1.508-.03h-2.305l-.34-.006a3 3 0 0 1-1.621-.597l-.195-.16c-.072-.065-.142-.135-.243-.237l-.186-.183a1.75 1.75 0 0 0-.909-.424l-.144-.015c-.05-.003-.103-.003-.262-.003H6.55c-.675 0-1.144 0-1.508.03a2.3 2.3 0 0 0-.585.107l-.123.052c-.287.147-.528.37-.695.643l-.068.12c-.076.15-.13.351-.159.708-.03.364-.03.833-.03 1.508z"/>
   </symbol>
-  <!-- Two arrows around nothing: the folder mirror. Drawn here rather than
-       copied, so it matches the 1.25-stroke group the menu icons sit in. -->
-  <symbol id="icon-sync" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M3 9h13l-3-3M16 9l-3 3M21 15H8l3-3M8 15l3 3"/>
+  <symbol id="icon-sync" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M3.502 16.666v-3.333c0-.367.298-.665.665-.665H7.5l.134.014a.665.665 0 0 1 0 1.303l-.134.013H5.475A6.12 6.12 0 0 0 10 16.001c3.06 0 5.586-2.29 5.955-5.25l.03-.131a.665.665 0 0 1 1.29.295l-.05.337A7.33 7.33 0 0 1 10 17.332a7.46 7.46 0 0 1-5.168-2.085v1.42a.665.665 0 0 1-1.33 0m.543-7.417a.665.665 0 0 1-1.32-.165zM10 2.67c1.994 0 3.837.797 5.178 2.093V3.333a.665.665 0 0 1 1.33 0v3.333a.665.665 0 0 1-.665.665H12.51a.665.665 0 0 1 0-1.33h2.015A6.12 6.12 0 0 0 10 3.998 6.003 6.003 0 0 0 4.045 9.25l-.66-.083-.66-.082A7.333 7.333 0 0 1 10 2.668"/>
   </symbol>
-  <symbol id="icon-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M7 10v-2a5 5 0 0 1 10 0v2"/>
-    <rect x="5" y="10" width="14" height="10" rx="2"/>
-    <path d="M12 14v2"/>
+  <symbol id="icon-lock" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M5 6.667a5 5 0 0 1 10 0v.125c.236.052.462.127.68.238.627.32 1.137.83 1.457 1.457.206.404.288.835.326 1.303.037.451.037 1.005.037 1.676v2.068c0 .671 0 1.225-.037 1.676-.038.468-.12.899-.326 1.303a3.33 3.33 0 0 1-1.457 1.457c-.405.206-.835.288-1.303.327-.452.036-1.005.036-1.676.036H7.3c-.67 0-1.225 0-1.676-.036-.468-.039-.899-.12-1.303-.327a3.33 3.33 0 0 1-1.457-1.457c-.206-.404-.288-.835-.326-1.303-.037-.451-.037-1.005-.037-1.676v-2.068c0-.671 0-1.225.037-1.676.038-.468.12-.899.326-1.303.32-.628.83-1.137 1.457-1.457.218-.111.444-.186.68-.238zm1.667.001.632-.001H12.7l.632.001v-.001a3.333 3.333 0 1 0-6.666 0zm-.908 1.697c-.365.03-.552.084-.682.15-.314.16-.569.415-.729.728-.066.13-.12.318-.15.683-.03.375-.031.86-.031 1.574v2c0 .714 0 1.2.031 1.574.03.366.084.552.15.683.16.313.415.568.729.728.13.066.317.12.682.15.375.031.86.032 1.574.032h5.334c.713 0 1.199-.001 1.574-.032.365-.03.552-.084.682-.15.314-.16.569-.415.729-.728.066-.13.12-.317.15-.683.03-.375.031-.86.031-1.574v-2c0-.714 0-1.2-.031-1.574-.03-.365-.084-.552-.15-.683a1.67 1.67 0 0 0-.729-.728c-.13-.066-.317-.12-.682-.15-.375-.031-.86-.032-1.574-.032H7.333c-.713 0-1.199.001-1.574.032"/>
+    <path d="M8.333 11.667a1.667 1.667 0 1 1 2.5 1.443v1.057a.833.833 0 0 1-1.666 0V13.11a1.67 1.67 0 0 1-.834-1.443"/>
   </symbol>
   <symbol id="icon-unlock" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
@@ -1918,11 +3394,8 @@
     <rect x="5" y="10" width="14" height="10" rx="2"/>
     <path d="M12 14v2"/>
   </symbol>
-  <symbol id="icon-theme" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18"/>
-    <path d="M12 3v18a9 9 0 0 0 0-18" fill="currentColor" stroke="none"/>
+  <symbol id="icon-theme" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M8.502 5.833c0-.902.149-1.771.42-2.584a6.835 6.835 0 1 0 6.672 10.677 8.164 8.164 0 0 1-7.092-8.093m1.33 0a6.835 6.835 0 0 0 6.835 6.835h.049a.665.665 0 0 1 .634.882l-.034.08A8.165 8.165 0 1 1 9.941 1.835l.086.004a.665.665 0 0 1 .515.956 6.8 6.8 0 0 0-.71 3.037"/>
   </symbol>
   <symbol id="icon-columns" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
@@ -1931,35 +3404,25 @@
     <path d="M12 4v16"/>
   </symbol>
 
-  <symbol id="icon-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/>
-    <circle cx="12" cy="12" r="3"/>
+  <symbol id="icon-settings" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M10.323 1.627c.828 0 1.595.439 2.014 1.154l.822 1.4.053.07c.062.06.145.096.233.096l1.615.013.154.007c.768.057 1.463.49 1.85 1.164l.329.571.073.136c.315.642.318 1.395.008 2.04l-.071.136-.803 1.422a.34.34 0 0 0 0 .329l.803 1.42.071.137c.31.645.308 1.398-.008 2.04l-.073.136-.328.571a2.34 2.34 0 0 1-1.85 1.165l-.155.005-1.615.014a.34.34 0 0 0-.233.097l-.053.068-.822 1.401a2.34 2.34 0 0 1-2.014 1.155h-.647c-.777 0-1.499-.387-1.931-1.024l-.082-.13-.822-1.402a.34.34 0 0 0-.2-.153l-.086-.012-1.615-.014A2.34 2.34 0 0 1 3.016 14.6l-.081-.13-.328-.572a2.34 2.34 0 0 1-.01-2.312l.802-1.421.033-.08a.34.34 0 0 0 0-.17l-.033-.08-.802-1.421a2.33 2.33 0 0 1 .01-2.312l.328-.571.081-.13A2.34 2.34 0 0 1 4.94 4.36l1.615-.013.086-.011a.34.34 0 0 0 .2-.155l.822-1.4.082-.13a2.34 2.34 0 0 1 1.931-1.024zm-.647 1.33c-.312 0-.603.144-.792.386l-.074.11-.821 1.401c-.26.443-.706.737-1.206.807l-.217.016-1.615.013c-.312.003-.603.15-.79.394l-.074.11-.328.571a1 1 0 0 0-.004.995l.802 1.421.095.196c.161.399.16.846 0 1.246l-.095.196-.802 1.42c-.174.31-.173.688.004.996l.328.57.075.11c.186.245.476.392.789.394l1.615.014.217.015c.5.07.946.366 1.206.808l.821 1.4.074.11c.189.242.48.388.792.388h.647c.356 0 .686-.19.867-.497l.821-1.4.122-.181c.31-.4.788-.639 1.301-.643l1.615-.014.132-.01c.304-.042.576-.223.732-.494l.328-.57.057-.118c.1-.243.102-.515.004-.758l-.057-.12-.803-1.42a1.67 1.67 0 0 1 0-1.638l.803-1.42.057-.12a1 1 0 0 0-.004-.758l-.057-.118-.328-.571a1 1 0 0 0-.732-.494l-.132-.01-1.615-.013a1.67 1.67 0 0 1-1.3-.642l-.123-.18-.821-1.401a1 1 0 0 0-.867-.497zM11.586 10A1.586 1.586 0 1 0 8.413 10 1.586 1.586 0 0 0 11.585 10m1.329 0a2.915 2.915 0 1 1-5.83 0 2.915 2.915 0 0 1 5.83 0"/>
   </symbol>
 
-  <!-- Two links of one chain, with the join between them: the panel this row
-       opens shows the notes whose chains reach the one on screen. -->
-  <symbol id="icon-backlinks" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M9 15l6 -6"/>
-    <path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.53 .536"/>
-    <path d="M13 18l-.463 .536a5 5 0 0 1 -7.071 -7.072l.53 -.536"/>
+  <symbol id="icon-backlinks" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M2.254 10.833v3.333a3.165 3.165 0 0 0 3.165 3.165h4.167a3.17 3.17 0 0 0 2.94-1.992.665.665 0 0 0-1.235-.493 1.84 1.84 0 0 1-1.705 1.155H5.419a1.835 1.835 0 0 1-1.835-1.835v-3.333c0-1.013.821-1.835 1.835-1.835h5l.134-.013a.665.665 0 0 0 0-1.303l-.134-.014h-5a3.165 3.165 0 0 0-3.165 3.165"/>
+    <path d="M16.416 5.833v3.333a1.835 1.835 0 0 1-1.835 1.835h-5a.666.666 0 0 0 0 1.33h5a3.165 3.165 0 0 0 3.165-3.165V5.833a3.165 3.165 0 0 0-3.165-3.165h-4.166a3.17 3.17 0 0 0-2.846 1.779l-.094.214a.665.665 0 0 0 1.172.612l.063-.12a1.84 1.84 0 0 1 1.705-1.155h4.166c1.014 0 1.835.822 1.835 1.835"/>
   </symbol>
 
-  <symbol id="icon-writing" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/>
-    <path d="M13.5 6.5l4 4"/>
+  <symbol id="icon-writing" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M11.331 3.568a3.61 3.61 0 0 1 4.973.128l.128.135a3.61 3.61 0 0 1 0 4.838l-.128.135-6.292 6.29c-.324.324-.558.561-.79.752l-.235.177q-.309.21-.65.36l-.23.093c-.181.066-.369.114-.585.159l-.765.135-2.394.399c-.142.024-.294.05-.422.06-.1.007-.233.01-.378-.026l-.149-.049a1.1 1.1 0 0 1-.522-.474l-.046-.094a1.1 1.1 0 0 1-.074-.526c.01-.129.035-.28.06-.423l.398-2.394.134-.764a4 4 0 0 1 .16-.586l.093-.23q.15-.342.36-.65l.176-.235c.19-.232.429-.466.752-.79l6.291-6.292zm-5.485 7.36c-.35.35-.533.535-.66.688l-.11.147a2.7 2.7 0 0 0-.24.433l-.062.155c-.04.11-.072.225-.106.394l-.127.717-.398 2.393-.001.002h.003l2.393-.399.717-.126c.169-.034.284-.065.395-.105l.153-.062q.228-.1.433-.241l.148-.11c.153-.126.338-.31.687-.66l4.988-4.988-3.226-3.226zm9.517-6.291a2.28 2.28 0 0 0-3.053-.157l-.173.157-.364.363L15 8.226l.363-.363.157-.174a2.28 2.28 0 0 0 0-2.878z"/>
   </symbol>
 
-  <symbol id="icon-task" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <rect x="4" y="4" width="16" height="16" rx="2"/>
-    <path d="M9 12l2 2l4 -4"/>
+  <symbol id="icon-microphone" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M15.78 10.196a.665.665 0 0 1 .449.827l-.08.25a6.5 6.5 0 0 1-5.485 4.357l.001 1.205h1.418l.134.014a.665.665 0 0 1 0 1.302l-.134.014H7.916a.665.665 0 0 1 0-1.33h1.42l-.002-1.205a6.5 6.5 0 0 1-5.484-4.357l-.08-.25-.026-.132a.665.665 0 0 1 1.25-.371l.051.124.064.198a5.17 5.17 0 0 0 9.844-.198l.052-.124a.664.664 0 0 1 .776-.324m-3.529-4.779a2.252 2.252 0 1 0-4.503 0v3.75a2.252 2.252 0 0 0 4.503 0zm1.33 3.75a3.581 3.581 0 0 1-7.163 0v-3.75a3.582 3.582 0 0 1 7.163 0z"/>
+  </symbol>
+
+  <symbol id="icon-task" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M16.002 7.333c0-.71 0-1.204-.032-1.588a2.4 2.4 0 0 0-.112-.615L15.802 5a1.84 1.84 0 0 0-.675-.731l-.128-.07c-.158-.08-.369-.138-.745-.168-.383-.032-.877-.033-1.588-.033H7.333c-.71 0-1.204.001-1.587.033-.282.023-.472.06-.616.11L5 4.2a1.84 1.84 0 0 0-.731.675L4.199 5c-.08.158-.138.37-.168.745-.032.384-.032.877-.032 1.588v5.333c0 .711 0 1.205.032 1.588.03.376.087.587.168.745l.07.127c.176.288.43.522.731.676l.13.056c.144.051.334.089.616.112.383.031.876.031 1.587.031h5.333c.711 0 1.205 0 1.588-.031.376-.03.588-.088.745-.168l.127-.071c.288-.176.522-.43.676-.732l.056-.13c.051-.143.09-.333.112-.615.031-.383.031-.877.031-1.588zm-3.504-.424a.666.666 0 0 1 1.088.765L9.627 13.3a.666.666 0 0 1-1.036.065l-2.083-2.291.984-.895 1.524 1.677zm-5.945 3.224a.664.664 0 0 1 .939.045l-.984.895a.665.665 0 0 1 .045-.94m10.778 2.533c0 .69.001 1.246-.036 1.697-.032.4-.097.762-.242 1.098l-.066.143c-.266.52-.67.957-1.165 1.26l-.218.123c-.377.192-.783.27-1.241.308-.45.037-1.008.036-1.697.036H7.333c-.689 0-1.246.001-1.696-.036-.4-.033-.761-.098-1.097-.242l-.143-.066a3.17 3.17 0 0 1-1.262-1.165l-.122-.218c-.192-.377-.271-.783-.308-1.241-.037-.45-.037-1.008-.037-1.697V7.333c0-.689 0-1.246.037-1.696.037-.458.116-.864.308-1.24l.122-.219c.304-.496.74-.9 1.262-1.165l.143-.066c.336-.145.697-.21 1.097-.243.45-.036 1.007-.036 1.697-.036h5.333c.688 0 1.246 0 1.696.036.458.038.864.117 1.241.309l.218.122c.496.304.9.74 1.165 1.262l.066.142c.145.337.21.697.242 1.098.037.45.036 1.007.036 1.696z"/>
   </symbol>
 
   <symbol id="icon-zip" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1971,47 +3434,35 @@
     <path d="M17 17h3"/>
   </symbol>
 
-  <!-- The menu icons below come from the tabler-outline set, matching the ten
-       above them. The stroke width is the page's 1.25 rather than the 1.5 they
-       were drawn at, so one menu does not carry two weights. -->
-
-  <symbol id="icon-download" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"/>
-    <path d="M7 11l5 5l5 -5"/>
-    <path d="M12 4l0 12"/>
+  <symbol id="icon-download" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M2.668 12.666V12.5a.665.665 0 0 1 1.33 0v.166c0 .711.001 1.205.033 1.588.03.376.087.587.167.745l.07.127c.177.288.43.522.732.676l.13.056c.144.051.333.089.615.112.384.031.877.031 1.588.031h5.333c.711 0 1.205 0 1.588-.031.376-.03.587-.088.745-.168l.127-.071c.288-.176.522-.43.676-.732l.056-.13c.051-.143.089-.333.112-.615.031-.383.031-.877.031-1.588V12.5a.665.665 0 0 1 1.33 0v.166c0 .69 0 1.246-.036 1.697-.033.4-.098.762-.242 1.098l-.066.143c-.266.52-.67.957-1.165 1.26l-.218.123c-.377.192-.783.27-1.241.308-.45.037-1.008.036-1.697.036H7.333c-.689 0-1.246.001-1.696-.036-.4-.033-.761-.097-1.098-.241l-.142-.067a3.17 3.17 0 0 1-1.262-1.165l-.122-.218c-.192-.377-.271-.783-.309-1.241-.036-.45-.036-1.008-.036-1.697m6.667-9.333a.665.665 0 0 1 1.33 0v7.56l2.198-2.196.104-.085a.666.666 0 0 1 .837 1.025L10.47 12.97a.665.665 0 0 1-.94 0L6.197 9.637l-.085-.104a.665.665 0 0 1 .92-.921l.105.085 2.198 2.198z"/>
   </symbol>
 
-  <symbol id="icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M8 8m0 2a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2z"/>
-    <path d="M16 8v-2a2 2 0 0 0 -2 -2h-8a2 2 0 0 0 -2 2v8a2 2 0 0 0 2 2h2"/>
+  <symbol id="icon-copy" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M11.835 4.583a1.835 1.835 0 0 0-3.67 0c0 .093.075.168.168.168h3.333a.17.17 0 0 0 .17-.168m4.871 8.5c0 .69.001 1.246-.036 1.697-.033.4-.097.761-.241 1.097l-.067.143c-.266.521-.67.957-1.165 1.262l-.218.122c-.377.192-.783.27-1.241.308-.45.037-1.008.036-1.697.036H7.958c-.689 0-1.246.001-1.696-.036-.4-.032-.761-.098-1.098-.242l-.142-.066a3.17 3.17 0 0 1-1.262-1.165l-.122-.22c-.192-.376-.271-.782-.309-1.24-.036-.45-.036-1.007-.036-1.696v-5.65c0-.542 0-.981.023-1.338.023-.362.073-.686.194-.995A3.17 3.17 0 0 1 5.308 3.3l.235-.077c.239-.066.49-.099.761-.116.257-.017.557-.02.907-.022a3.164 3.164 0 0 1 5.577 0c.351.001.651.005.909.022.362.023.686.073.995.193l.152.065c.752.34 1.345.96 1.647 1.734l.078.235c.065.239.097.489.115.76.023.357.022.796.022 1.339zm-3.54-8.5c0 .828-.672 1.498-1.5 1.498H8.333c-.827 0-1.498-.67-1.498-1.498q0-.083.004-.164-.253.003-.45.016a2.5 2.5 0 0 0-.492.07l-.106.035a1.84 1.84 0 0 0-1.043 1.043c-.05.129-.086.3-.105.598-.02.304-.02.693-.02 1.253v5.65c0 .71.001 1.204.033 1.587.03.376.087.587.167.745l.07.126c.177.288.43.522.732.676l.13.057c.144.051.334.088.615.111.384.031.877.032 1.588.032h4.083c.711 0 1.205 0 1.588-.032.376-.03.587-.087.745-.168l.127-.07c.288-.176.522-.43.676-.732l.056-.13c.051-.143.089-.333.112-.615.031-.383.031-.877.031-1.588v-5.65c0-.56 0-.948-.02-1.252a2.5 2.5 0 0 0-.07-.492l-.035-.106a1.84 1.84 0 0 0-.868-.964l-.175-.079c-.129-.05-.3-.086-.597-.105a10 10 0 0 0-.45-.016q.003.083.004.164"/>
   </symbol>
 
-  <symbol id="icon-list" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M9 6l11 0"/>
-    <path d="M9 12l11 0"/>
-    <path d="M9 18l11 0"/>
-    <path d="M5 6l0 .01"/>
-    <path d="M5 12l0 .01"/>
-    <path d="M5 18l0 .01"/>
+  <symbol id="icon-list" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M5.693 11.056a2.71 2.71 0 0 1 2.432 2.694l-.015.277a2.71 2.71 0 0 1-2.694 2.432l-.276-.015a2.71 2.71 0 0 1-2.418-2.417l-.014-.277a2.71 2.71 0 0 1 2.708-2.708zm-.277 1.316a1.378 1.378 0 1 0 0 2.757 1.378 1.378 0 0 0 0-2.757M16.8 13.099a.665.665 0 0 1 0 1.302l-.134.014h-5.833a.665.665 0 0 1 0-1.33h5.833zM5.693 3.556A2.71 2.71 0 0 1 8.125 6.25l-.015.277A2.71 2.71 0 0 1 5.416 8.96l-.276-.015a2.71 2.71 0 0 1-2.418-2.417l-.014-.277a2.71 2.71 0 0 1 2.708-2.708zm-.277 1.316a1.378 1.378 0 1 0 .001 2.757 1.378 1.378 0 0 0-.001-2.757M16.8 5.599a.665.665 0 0 1 0 1.302l-.134.014h-5.833a.665.665 0 0 1 0-1.33h5.833z"/>
   </symbol>
 
-  <symbol id="icon-info" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-    <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
-    <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/>
-    <path d="M12 9h.01"/>
-    <path d="M11 12h1v4h1"/>
+  <symbol id="icon-info" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M10 9.25a.75.75 0 0 1 .75.75v3.333a.75.75 0 0 1-1.5 0V10a.75.75 0 0 1 .75-.75M10 5.833a.959.959 0 1 1-.001 1.917A.959.959 0 0 1 10 5.833"/>
+    <path fill-rule="evenodd" d="M10 2.085a7.915 7.915 0 1 1 0 15.83 7.915 7.915 0 0 1 0-15.83m0 1.33a6.585 6.585 0 1 0 0 13.17 6.585 6.585 0 0 0 0-13.17" clip-rule="evenodd"/>
   </symbol>
 
   <!-- The floppy, carried over from the icon set this fork started from. It
        belongs to the tabler group above, so it takes that group's 24-unit box
        and 1.25 stroke rather than the 960-unit one below. -->
+  <symbol id="icon-pin" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M11.835 12.5c0-.793.444-1.487 1.026-1.902l3.551-2.536.09-.073a1.01 1.01 0 0 0 .114-1.377l-.077-.086-3.065-3.065a1.01 1.01 0 0 0-1.463.037l-.073.09-2.536 3.55C8.987 7.72 8.293 8.166 7.5 8.166H5.417c-.434 0-.843.301-1.05.781-.205.476-.143.965.172 1.28l5.234 5.235.126.106c.312.22.739.245 1.155.066.48-.207.78-.616.78-1.05zm1.33 2.083c0 1.09-.743 1.909-1.585 2.272-.793.341-1.817.34-2.595-.314l-.152-.14-2.147-2.147L2.97 17.97a.666.666 0 0 1-.942-.942l3.716-3.716L3.6 11.168c-.792-.792-.818-1.901-.454-2.747.363-.842 1.182-1.585 2.272-1.585H7.5c.288 0 .607-.172.82-.47l2.536-3.55.081-.108a2.34 2.34 0 0 1 3.477-.186l3.065 3.065.093.098a2.34 2.34 0 0 1-.28 3.379l-.107.08-3.55 2.537c-.299.213-.47.532-.47.82z"/>
+  </symbol>
+
+  <symbol id="icon-archive" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M11.8 10.182a.665.665 0 0 1 0 1.302l-.134.014H8.333a.665.665 0 0 1 0-1.33h3.333z"/>
+    <path fill-rule="evenodd" d="M15.417 2.668A2.333 2.333 0 0 1 17.749 5v.833c0 .499-.159.96-.426 1.339q.006.038.008.078v5.417c0 .689 0 1.246-.036 1.696-.033.4-.098.762-.242 1.098l-.067.143c-.265.52-.67.956-1.165 1.26l-.217.122c-.377.192-.784.271-1.242.309-.45.037-1.007.037-1.696.037H7.333c-.689 0-1.246 0-1.696-.037-.4-.033-.762-.097-1.098-.241l-.143-.068a3.17 3.17 0 0 1-1.261-1.165l-.122-.217c-.192-.377-.271-.783-.309-1.24-.037-.45-.036-1.008-.036-1.697V7.25q.002-.04.008-.08a2.3 2.3 0 0 1-.424-1.337V5a2.333 2.333 0 0 1 2.332-2.332zm.584 5.42a2.3 2.3 0 0 1-.584.077H4.584c-.203 0-.399-.029-.586-.077v4.579c0 .71 0 1.204.032 1.588.031.375.088.587.168.745l.07.126c.177.287.43.522.732.676l.13.055c.144.052.333.09.615.113.384.031.877.032 1.588.032h5.333c.71 0 1.204-.001 1.588-.032.375-.03.587-.088.745-.168l.127-.072c.287-.176.522-.428.676-.73l.055-.13c.052-.144.09-.334.113-.615.031-.384.031-.877.031-1.588zM4.584 3.998c-.553 0-1.002.449-1.002 1.002v.833c0 .553.449 1.002 1.002 1.002h10.833c.553 0 1.002-.449 1.002-1.002V5c0-.553-.45-1.002-1.002-1.002z" clip-rule="evenodd"/>
+  </symbol>
+
   <symbol id="icon-save" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
     <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
@@ -2020,22 +3471,14 @@
     <path d="M9 4l0 5l6 0l0 -5"/>
   </symbol>
 
-  <!-- The next four are Google's Material Symbols rather than tabler, because
-       the tabler set has no close or delete, because the QR code is wanted
-       from that family specifically, and because the drop that marks the Glass
-       row exists only in Google's set.
-
-       Each path below is copied verbatim from Google's repository, in Google's
-       own 960-unit coordinate space, and each symbol keeps Google's own viewBox
-       rather than the 24-unit one the tabler symbols above use. Nothing has been
-       rescaled or transcribed by hand: the QR code's three finder patterns sit
-       where Google draws them, and the trash can's lid is at the top. A hand
-       rescale had mirrored both, and no test was looking.
+  <!-- Google's Material Symbols, for the QR code (wanted from that family
+       specifically) and the drop that marks the Glass row (only Google has
+       one). Each path is copied verbatim from Google's repository in Google's
+       own 960-unit space, with Google's viewBox: a hand rescale once mirrored
+       the QR code's finder patterns, and no test was looking.
 
        One file each, in github.com/google/material-design-icons (Apache-2.0):
          symbols/web/qr_code/materialsymbolsoutlined/qr_code_24px.svg
-         symbols/web/close/materialsymbolsoutlined/close_24px.svg
-         symbols/web/delete/materialsymbolsoutlined/delete_24px.svg
          symbols/web/water_drop/materialsymbolsoutlined/water_drop_24px.svg -->
 
   <symbol id="icon-qr" viewBox="0 -960 960 960" fill="currentColor" stroke="none"
@@ -2043,14 +3486,12 @@
     <path d="M120-520v-320h320v320H120Zm80-80h160v-160H200v160Zm-80 480v-320h320v320H120Zm80-80h160v-160H200v160Zm320-320v-320h320v320H520Zm80-80h160v-160H600v160Zm160 480v-80h80v80h-80ZM520-360v-80h80v80h-80Zm80 80v-80h80v80h-80Zm-80 80v-80h80v80h-80Zm80 80v-80h80v80h-80Zm80-80v-80h80v80h-80Zm0-160v-80h80v80h-80Zm80 80v-80h80v80h-80Z"/>
   </symbol>
 
-  <symbol id="icon-close" viewBox="0 -960 960 960" fill="currentColor" stroke="none"
-          class="icon icon-material-symbols icons-material-symbols-outlined icon-close">
-    <path d="m256-200-56-56 224-224-224-224 56-56 224 224 224-224 56 56-224 224 224 224-56 56-224-224-224 224Z"/>
+  <symbol id="icon-close" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M14.255 4.755a.7.7 0 0 1 .99.99L10.99 10l4.255 4.255.09.11a.7.7 0 0 1-.97.97l-.11-.09L10 10.99l-4.255 4.255a.7.7 0 0 1-.99-.99L9.01 10 4.755 5.745l-.09-.11a.7.7 0 0 1 .97-.97l.11.09L10 9.01z"/>
   </symbol>
 
-  <symbol id="icon-delete" viewBox="0 -960 960 960" fill="currentColor" stroke="none"
-          class="icon icon-material-symbols icons-material-symbols-outlined icon-delete">
-    <path d="M280-120q-33 0-56.5-23.5T200-200v-520h-40v-80h200v-40h240v40h200v80h-40v520q0 33-23.5 56.5T680-120H280Zm400-600H280v520h400v-520ZM360-280h80v-360h-80v360Zm160 0h80v-360h-80v360ZM280-720v520-520Z"/>
+  <symbol id="icon-delete" viewBox="0 0 20 20" fill="currentColor" stroke="none">
+    <path d="M10.63 1.335c1.403 0 2.64.925 3.036 2.271l.215.729H17l.134.014a.665.665 0 0 1 0 1.302L17 5.665h-.346l-.797 9.326a3.165 3.165 0 0 1-3.153 2.897H7.296a3.166 3.166 0 0 1-3.113-2.594l-.04-.303-.796-9.326H3a.665.665 0 0 1 0-1.33h3.12l.214-.729.084-.248A3.165 3.165 0 0 1 9.37 1.335zM5.468 14.878l.023.176a1.835 1.835 0 0 0 1.805 1.504h5.408c.953 0 1.747-.73 1.828-1.68l.787-9.213H4.682zm2.2-2.05V8.66a.665.665 0 0 1 1.33 0v4.167a.665.665 0 0 1-1.33 0m3.334 0V8.66a.665.665 0 1 1 1.33 0v4.167a.665.665 0 0 1-1.33 0M9.37 2.664c-.763 0-1.44.47-1.712 1.173l-.049.143-.103.354h4.988l-.103-.354a1.835 1.835 0 0 0-1.761-1.316z"/>
   </symbol>
 
   <symbol id="icon-water-drop" viewBox="0 -960 960 960" fill="currentColor" stroke="none"

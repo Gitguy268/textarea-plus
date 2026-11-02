@@ -1,7 +1,10 @@
 // The end-to-end check the gate refuses to be: press Run in the real writing
 // tools and wait for the real committed model to answer.
 //
-// `npm run check:model`
+// `npm run check:model` - Gemma. `MODEL=minicpm5` or `MODEL=minicpm-v` checks
+// one of the others (the vision one also describes an image), and `WEBGPU=1`
+// gives headless Chromium a real GPU adapter on a Mac, so the run is the
+// WebGPU one a reader's browser does.
 //
 // Not part of test:all on purpose. It moves 241 MB of chunks through the
 // service worker, starts a wasm engine and runs inference - tens of seconds
@@ -15,15 +18,30 @@
 // model file had to come down twice, if a fetch escaped this origin, or if
 // the page threw.
 
+import {mkdtemp, readFile, rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
+
 import {chromium} from 'playwright'
 
+import {manifestFiles, MODELS} from '../lib/gemma.js'
 import {listen} from './serve.js'
+
+const MODEL = process.env.MODEL ?? 'gemma'
+if (!MODELS[MODEL]) throw new Error(`MODEL=${MODEL} is not one of ${Object.keys(MODELS).join(', ')}`)
+const DIR = MODELS[MODEL].dir
 
 /** Generous: a cold start pays a download, a wasm compile and a warm-up. */
 const RUN_TIMEOUT_MS = Number(process.env.MODEL_CHECK_TIMEOUT ?? 300_000)
 
 const {origin, close} = await listen(0)
-const browser = await chromium.launch()
+// A throwaway profile rather than chromium.launch(): that one behaves like a
+// private window, where Chrome keeps every Blob in memory and refuses to read
+// back a 1.5 GB model - which is not what a reader's own profile does.
+const profile = await mkdtemp(join(tmpdir(), 'textarea-model-check-'))
+const browser = await chromium.launchPersistentContext(profile, {
+  args: process.env.WEBGPU ? ['--enable-unsafe-webgpu', '--use-angle=metal'] : [],
+})
 
 let failed = false
 const complain = (message) => {
@@ -53,6 +71,8 @@ try {
   await page.locator('#menu-writing').click()
   const panel = page.locator('#writing-panel')
   await panel.waitFor({state: 'visible'})
+  await panel.locator('.writing-model select').selectOption(MODEL)
+  console.log(`Model: ${MODEL}; WebGPU adapter: ${await page.evaluate(async () => Boolean(await navigator.gpu?.requestAdapter()))}`)
 
   const probe = () =>
     panel.evaluate((root) => ({
@@ -102,7 +122,40 @@ try {
   const timing = await page.evaluate(() =>
     performance.getEntriesByType('resource').map((entry) => entry.name),
   )
-  const partNames = [1, 2, 3, 4].map((n) => `/models/gemma-3-270M-it-Q4_K_M.part${n}`)
+  if (MODEL === 'minicpm-v') {
+    console.log('Image run - Describe image on a drawn picture:')
+    const png = await page.evaluate(() => {
+      const canvas = document.createElement('canvas')
+      canvas.width = 320
+      canvas.height = 200
+      const g = canvas.getContext('2d')
+      g.fillStyle = '#fff'
+      g.fillRect(0, 0, 320, 200)
+      g.fillStyle = '#d00'
+      g.beginPath()
+      g.arc(90, 100, 60, 0, 7)
+      g.fill()
+      g.fillStyle = '#000'
+      g.font = 'bold 40px sans-serif'
+      g.fillText('CAT 42', 160, 115)
+      return canvas.toDataURL('image/png').split(',')[1]
+    })
+    await panel.locator('.writing-tool[data-tool="describe"]').click()
+    await panel.locator('.writing-image input[type="file"]').setInputFiles({
+      name: 'drawing.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(png, 'base64'),
+    })
+    await page.waitForFunction(() => !document.querySelector('.writing-preview').hidden)
+    const seen = Date.now()
+    await panel.locator('.writing-run').click()
+    const described = await untilSettled('image run')
+    console.log(`  answer after ${((Date.now() - seen) / 1000).toFixed(1)}s: ${described.output.replace(/\s+/g, ' ')}`)
+    if (!/42/.test(described.output)) complain('the description does not mention the "42" drawn in the image')
+  }
+
+  const manifest = JSON.parse(await readFile(new URL(`..${DIR}manifest.json`, import.meta.url), 'utf8'))
+  const partNames = manifestFiles(manifest).flatMap((file) => file.chunks.map((chunk) => DIR + chunk.path))
   for (const part of partNames) {
     const count = timing.filter((name) => name.endsWith(part)).length
     if (count !== 1) complain(`${part} was fetched ${count} times, expected exactly once`)
@@ -142,7 +195,7 @@ try {
     const cache = await caches.open('textarea-models')
     return (await cache.keys()).map((request) => new URL(request.url).pathname)
   })
-  for (const path of ['/models/manifest.json', ...partNames]) {
+  for (const path of [DIR + 'manifest.json', ...partNames]) {
     if (!cached.includes(path)) complain(`${path} is not in the model cache`)
   }
 
@@ -160,4 +213,5 @@ try {
 } finally {
   await browser.close()
   await close()
+  await rm(profile, {recursive: true, force: true})
 }

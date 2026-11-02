@@ -25,6 +25,11 @@ const ROOT = resolve(import.meta.dirname, '..')
 // (lib/fonts.js keeps that promise, and its own tests grade it). One
 // origin, named; no wildcard and no second host, which the header test
 // pins by comparing the whole directive.
+//
+// `microphone=(self)` in permissions-policy is speech to text: Record asks
+// for the microphone, on this origin and no frame inside it. `camera=(self)` is
+// Send to a device scanning the other device's code. Everything else
+// in that header stays empty.
 export const HEADERS = {
   'content-security-policy':
     "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://raw.githubusercontent.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
@@ -32,7 +37,7 @@ export const HEADERS = {
   'x-frame-options': 'DENY',
   'referrer-policy': 'strict-origin-when-cross-origin',
   'permissions-policy':
-    'camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()',
+    'camera=(self), microphone=(self), geolocation=(), payment=(), usb=(), browsing-topics=()',
   'cross-origin-opener-policy': 'same-origin',
   'strict-transport-security': 'max-age=63072000; includeSubDomains',
 }

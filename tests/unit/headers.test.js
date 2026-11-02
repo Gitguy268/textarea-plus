@@ -51,3 +51,14 @@ test('the only host the policy connects to beyond itself is GitHub raw', () => {
   // anyone noticing.
   assert.equal(connect, "'self' https://raw.githubusercontent.com")
 })
+
+test('the microphone and the camera are the only devices the page may ask for, and only as itself', () => {
+  // Speech to text records on a press of Record; Send to a device scans a
+  // code on a press of Scan. Every drift fails here by name: a grant dropped
+  // (the browser refuses before it asks), widened to a frame or a wildcard,
+  // or a third device let in beside them.
+  assert.equal(
+    HEADERS['permissions-policy'],
+    'camera=(self), microphone=(self), geolocation=(), payment=(), usb=(), browsing-topics=()',
+  )
+})

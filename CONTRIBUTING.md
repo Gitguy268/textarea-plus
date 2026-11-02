@@ -56,10 +56,10 @@ or a generated file, it is the wrong change. It has to work when someone opens
 `index.html` from a file server and nothing else happens.
 
 **2. Nothing is fetched at runtime from a CDN.** Every dependency is either a
-Web Platform API or a file checked in under `vendor/` (or, for the writing
-tools' model, under `models/`), loaded with a dynamic `import()` — or, for
-the model's chunks, a fetch — the first time it is needed. pdf.js, zip.js,
-the QR encoder and wllama are all loaded on demand for the same reason: a
+Web Platform API or a file checked in under `vendor/` (or, for the two
+models, under `models/`), loaded with a dynamic `import()` — or, for
+the models' chunks, a fetch — the first time it is needed. pdf.js, zip.js,
+the QR encoder, wllama and transformers.js are all loaded on demand for the same reason: a
 session that only types should not download two megabytes of PDF parser,
 let alone a quarter of a gigabyte of weights.
 
@@ -107,14 +107,18 @@ lib/              one module per concern, all pure where it can be
   switcher.js       the quick switcher on Ctrl/Cmd+K (filterNotes pure)
   writing-tools.js  the writing panel and its prompt (buildPrompt pure)
   gemma.js          the on-device engine: verify the chunks, then run them
+  speech-panel.js   the speech to text panel: record or pick a file, insert the transcript
+  whisper.js        its engine's page side: start the worker, decode audio to 16 kHz mono
+  whisper-worker.js the worker: verify and stitch the chunks, then transformers.js
   clipboard.js      copying, with a fallback
   markdown.js       the syntax highlighter
   pdf.js, pdf-layout.js
   open.js, save.js, share.js, theme.js, zip.js
-models/           the model itself, in transport chunks with pinned SHA-256s
+models/           the two models, in transport chunks with pinned SHA-256s
 tests/unit/       pure modules, under node --test
 tests/browser/    the real app in Chromium
-tests/fixtures/   the font the browser suite uploads (Silkscreen, OFL-1.1, with its licence)
+tests/fixtures/   the font the browser suite uploads (Silkscreen, OFL-1.1, with its licence),
+                  and jfk.wav for check:whisper (11 s of a 1961 US presidential address, public domain)
 vendor/           third-party code, each with its own licence, all lazy
 ```
 
@@ -182,6 +186,13 @@ touching `lib/gemma.js`, `lib/writing-tools.js`, or anything under
 `vendor/wllama/` or `models/`, finish with `npm run check:model`: it presses
 the real Run button against the committed bytes and fails loudly if a chunk
 comes down twice, a fetch leaves this origin, or no answer arrives.
+
+Speech to text has the same split and the same last step. When touching
+`lib/whisper.js`, `lib/whisper-worker.js`, `lib/speech-panel.js`, or anything
+under `vendor/transformers/` or `models/whisper-small-2d67713f/`, finish with
+`npm run check:whisper`: it transcribes a real recording through the file
+button, through Record with Chromium's fake microphone, and again with the
+network cut.
 
 ## Style
 

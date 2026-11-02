@@ -6,8 +6,8 @@ libraries here means the app works offline and does not depend on a CDN.
 
 Nothing in this directory is loaded on the initial page load. Every library here
 is fetched with a dynamic `import()` / `<script>` injection the first time a PDF
-is opened, a ZIP is written, a QR code is drawn, a glass panel appears or the
-on-device model is asked for, and the service worker caches them on first use.
+is opened, a ZIP is written, a QR code is drawn, a glass panel appears, the
+on-device model is asked for or audio is transcribed, and the service worker caches them on first use.
 
 ## `zip.js/`
 
@@ -118,6 +118,25 @@ importable under Node, so `tests/unit/qr.test.js` asserts the module matrix of
 `HELLO WORLD` against the published reference symbol instead of merely checking
 that a string came back.
 
+## `jsqr/`
+
+| | |
+|---|---|
+| Project | [cozmo/jsQR](https://github.com/cozmo/jsQR) |
+| Package | [`jsqr`](https://www.npmjs.com/package/jsqr) |
+| Version | 1.4.0 |
+| License | Apache-2.0 (see `jsqr/LICENSE`) |
+
+| Path | Size | Purpose |
+|---|---|---|
+| `jsQR.js` | 257 KB | QR decoder over raw RGBA pixels, `dist/jsQR.js` from the package, unmodified |
+
+`lib/qr-scan.js` reads the nearby-device panel's codes from the camera with the
+browser's own `BarcodeDetector` where there is one (Chromium on macOS and
+Android). Firefox, Safari and the other desktop Chromiums have none, and jsQR
+is the fallback there, fetched only when a scan starts. The file is a webpack
+UMD bundle: imported as a module for its side effect, it sets `self.jsQR`.
+
 ## `liquid-glass/`
 
 | | |
@@ -162,21 +181,48 @@ libraries already vendored here: a single file, no dependencies, a per-element
 API with `refresh()`/`destroy()` for open/close lifecycles, an automatic
 fallback, and an MIT licence with a standalone `LICENSE` file.
 
+## `liquid-glass-ui/`
+
+| | |
+|---|---|
+| Project | [hwyuanzi/LiquidGlass-UI](https://github.com/hwyuanzi/LiquidGlass-UI) |
+| License | MIT (see `liquid-glass-ui/LICENSE`) |
+
+A licence and no code. LiquidGlass-UI is a set of web components, and its
+refraction only works inside them, so it could not sit on the `<dialog>`s and
+the menu this app already has - and it would have fought `liquid-glass/` for
+the same `backdrop-filter`. What this app lacked was the other half of its
+work: the material. Its stylesheet's recipe (a gradient fill, a rim, specular
+and occlusion highlights, a sheen, and the fallbacks for more contrast and
+forced colours) is ported into the `html.glass` block of `index.html`, which is
+why its licence is here. The bending stays with `liquid-glass/`.
+
+[iyinchao/liquid-glass-studio](https://github.com/iyinchao/liquid-glass-studio)
+(MIT) was asked for too and is not here at all: it is a React and WebGL2
+playground that needs a build step and refracts an image or a video it is
+handed, never the page behind an element. Two of its parameters are borrowed
+by eye - the angled glare and the rim brightest at two opposite corners - and
+its dispersion is the `chroma` option `lib/glass.js` already passes.
+
 ## `wllama/`
 
 | | |
 |---|---|
 | Project | [ngxson/wllama](https://github.com/ngxson/wllama) |
 | Package | [`@wllama/wllama`](https://www.npmjs.com/package/@wllama/wllama) and [`@wllama/wllama-compat`](https://www.npmjs.com/package/@wllama/wllama-compat) |
-| Version | 3.8.1 |
+| Version | 3.11.0, built from [`1a5687ef7c`](https://github.com/ngxson/wllama/commit/1a5687ef7c8b349a8bded4db334ae9c687c09b8c) on `master` (llama.cpp `5c8854f`), because the 3.8.1 release cannot load MiniCPM-V 4.7 |
 | License | MIT (see `wllama/LICENSE`) |
 
 | Path | Size | Purpose |
 |---|---|---|
-| `wllama.js` | 324 KB | The ESM bundle: `Wllama`, its OpenAI-compatible completion API, the cache and model managers |
-| `wllama.wasm` | 8.4 MB | llama.cpp compiled for wasm with JSPI and memory64 — the build modern browsers run |
-| `wllama-compat.js` | 168 KB | Worker for the compatibility build |
-| `wllama-compat.wasm` | 15 MB | wasm32 llama.cpp for browsers without JSPI or memory64 (older Safari and Firefox), handed to `setCompat()` so those browsers work without a CDN |
+| `wllama.js` | 327 KB | The ESM bundle: `Wllama`, its OpenAI-compatible completion API, the cache and model managers |
+| `wllama.wasm` | 8.6 MB | llama.cpp compiled for wasm with JSPI, memory64 and the WebGPU backend — the build modern browsers run |
+| `wllama-compat.js` | 167 KB | Worker for the compatibility build |
+| `wllama-compat.wasm` | 16 MB | wasm32 llama.cpp for browsers without JSPI or memory64 (older Safari and Firefox), handed to `setCompat()` so those browsers work without a CDN |
+
+How it was built: `git clone https://github.com/ngxson/wllama && git checkout 1a5687ef7c && git submodule update --init`,
+then `npm ci && npm run build:wasm && npm run build` (the wasm step runs emscripten in Docker). `wllama.js` is
+`esm/index.min.js`, `wllama.wasm` is `src/wasm/wllama.wasm`, and the compat pair is `compat/wasm/wllama.{js,wasm}`.
 
 Nothing here loads until the reader presses **Run** in the writing tools:
 that press fetches `lib/gemma.js`, which fetches and verifies the model in
@@ -212,11 +258,112 @@ straight from disk-shaped URLs, and it exposes the same `createChatCompletion`
 shape as the online APIs — so `lib/gemma.js` stays a thin adapter and the
 quantization the reader gets is byte-for-byte the GGUF in `models/`.
 
+`wllama.wasm` and `wllama-compat.wasm` are
+[llama.cpp](https://github.com/ggml-org/llama.cpp) compiled to WebAssembly.
+llama.cpp is MIT licensed by the ggml authors, and its notice has to travel
+with the binaries: it is `wllama/LICENSE-llama.cpp`.
+
 ### The model itself
 
 The weights are **not** vendored here — they live in `../models/` as transport
 chunks with their own README (source, quantization, SHA-256, licence). This
 directory is code only; that directory is the 253 MB the code runs on.
+
+## `transformers/`
+
+| | |
+|---|---|
+| Project | [huggingface/transformers.js](https://github.com/huggingface/transformers.js) |
+| Package | [`@huggingface/transformers`](https://www.npmjs.com/package/@huggingface/transformers) |
+| Version | 4.3.1 |
+| License | Apache-2.0 (see `transformers/LICENSE`) |
+| Runtime inside it | [ONNX Runtime Web](https://github.com/microsoft/onnxruntime), `onnxruntime-web@1.31.0-dev.20260914-8d85527a0`, the exact build 4.3.1 pins; MIT (see `transformers/LICENSE-onnxruntime`) |
+
+| Path | Size | Purpose |
+|---|---|---|
+| `transformers.min.js` | 586 KB | The self-contained ESM bundle: pipelines, tokenizers, Whisper's feature extractor and decoding, and ONNX Runtime's JavaScript half |
+| `ort-wasm-simd-threaded.mjs` | 24 KB | ONNX Runtime's wasm loader |
+| `ort-wasm-simd-threaded.wasm` | 14.3 MB | ONNX Runtime compiled to WebAssembly, the plain CPU build |
+| `ort-wasm-simd-threaded.asyncify.mjs` | 53 KB | The loader of the WebGPU-capable build |
+| `ort-wasm-simd-threaded.asyncify.wasm` | 26.9 MB | ONNX Runtime with its WebGPU backend, for Whisper large v3 turbo |
+
+All four runtime files are byte for byte the ones in that exact
+`onnxruntime-web` package (`dist/`).
+
+Nothing here loads until the **Speech to text** panel has audio to
+transcribe: that starts `lib/whisper-worker.js`, a module worker, which is the
+only file that imports the bundle. The weights it runs are in
+`../models/whisper-small-2d67713f/` and `../models/whisper-large-v3-turbo-efd60f61/`,
+each with a README of its own. A worker loads one of the two runtime builds
+and keeps it: the plain pair for small, the asyncify pair for turbo.
+
+Three of the library's defaults reach off this origin, and the worker turns
+each one around before the first call: models from `huggingface.co`
+(`env.allowRemoteModels = false`, `env.localModelPath = '/models/'`), the
+wasm from jsDelivr (`env.backends.onnx.wasm.wasmPaths`, both file names
+spelled out), and two caches of its own that would store a second copy of
+what the service worker already keeps (`env.useBrowserCache`,
+`env.useWasmCache`). `npm run check:whisper` fails if a request leaves this
+origin or if any runtime file but the bundle and the chosen model's pair is
+asked for.
+
+### Which files, and why not the others
+
+- `transformers.min.js`, not `transformers.web.min.js`. The "web" bundle is
+  smaller because it leaves ONNX Runtime out as bare imports
+  (`onnxruntime-web/webgpu`, `onnxruntime-common`) for a bundler to resolve.
+  There is no bundler here, and an import map does not reach into a worker.
+- The plain wasm pair for Whisper small, whose 8-bit weights are for the
+  CPU. The asyncify pair (27 MB) only for large v3 turbo, which is fp16 and
+  4-bit on the GPU and is only offered where WebGPU can do half precision;
+  it is downloaded the first time turbo is chosen, never for small. The
+  recipe for turbo - transformers.js on WebGPU, an fp16 encoder with a 4-bit
+  decoder - follows [lalax-systems/whisper-browser-gpu](https://github.com/lalax-systems/whisper-browser-gpu)
+  (MIT) and the model card of
+  [striimit/whisper-large-v3-turbo-webgpu](https://huggingface.co/striimit/whisper-large-v3-turbo-webgpu);
+  no code is taken from either.
+- One thread. The page is not cross-origin isolated (there is no
+  `Cross-Origin-Embedder-Policy` header), so the browser gives wasm no
+  shared memory and ONNX Runtime no thread pool. Whisper small still keeps
+  up with speech, roughly, on a laptop.
+
+### Why transformers.js
+
+It was passed over for the writing tools because Gemma is published as GGUF.
+Whisper is the other way round: the browser-ready conversion that exists is
+ONNX, and transformers.js carries the parts of Whisper that are not the
+network - the log-mel spectrogram, the tokenizer, the thirty-second windows
+and the stitching of their overlaps. whisper.cpp compiled to wasm was the
+alternative; it would have meant vendoring a build this project would have to
+compile itself.
+
+## `whisper-web/`
+
+| | |
+|---|---|
+| Project | [xenova/whisper-web](https://github.com/xenova/whisper-web) |
+| License | MIT (see `whisper-web/LICENSE`) |
+
+A licence and no code. whisper-web is the application the **Speech to text**
+panel was asked for by name, and it is a React, Vite and Tailwind app that
+needs a build step and downloads its models from Hugging Face while it runs -
+two things this project does not do. What is taken from it is the recipe:
+Whisper through transformers.js in a web worker, the audio decoded by an
+`AudioContext` at 16 kHz and mixed to mono before it crosses over, thirty
+second windows with five seconds of overlap. Its interface, its model picker,
+its transcription from a URL (which the Content-Security-Policy here forbids)
+and its timestamps are not ported.
+
+## `icons/`
+
+No code lives here, only licence files. The icons themselves are inline
+SVG in `index.html`:
+
+| Set | Used for | License |
+|---|---|---|
+| [Aiko](https://github.com/tw93/aiko) (`assets/icons.svg` at `6ae2c093`) | Nineteen of the icons: the menu, close, delete, pin and archive | MIT (see `icons/LICENSE-aiko`) |
+| [Tabler Icons](https://github.com/tabler/tabler-icons) | GitHub, unlock, columns, zip and save, which Aiko has no icon for | MIT (see `icons/LICENSE-tabler`) |
+| [Material Symbols](https://github.com/google/material-design-icons) | QR code and the Glass drop | Apache-2.0 (see `icons/LICENSE-material-symbols`) |
 
 ## Refreshing
 
@@ -227,8 +374,8 @@ tar xzf pdfjs-dist-<version>.tgz -C pdfjs --strip-components=1
 tar xzf qrcode-generator-<version>.tgz
 cp zip/dist/zip.min.js zip/LICENSE vendor/zip.js/
 cp pdfjs/build/pdf.min.mjs pdfjs/build/pdf.worker.min.mjs pdfjs/LICENSE vendor/pdfjs/
-cp pdfjs/cmaps/*.bcmap vendor/pdfjs/cmaps/
-cp pdfjs/standard_fonts/*.pfb vendor/pdfjs/standard_fonts/
+cp pdfjs/cmaps/*.bcmap pdfjs/cmaps/LICENSE vendor/pdfjs/cmaps/
+cp pdfjs/standard_fonts/*.pfb pdfjs/standard_fonts/LICENSE_FOXIT vendor/pdfjs/standard_fonts/
 cp package/dist/qrcode.mjs package/dist/qrcode_UTF8.mjs vendor/qr/
 ```
 
@@ -261,6 +408,32 @@ cp wllama-compat/wasm/wllama.wasm vendor/wllama/wllama-compat.wasm
 Neither wllama tarball ships a licence file — the repository spells it
 `LICENCE` — so `vendor/wllama/LICENSE` is transcribed from
 [the repository's copy](https://github.com/ngxson/wllama/blob/master/LICENCE).
+
+`vendor/wllama/LICENSE-llama.cpp` is
+[llama.cpp's own licence file](https://github.com/ggml-org/llama.cpp/blob/master/LICENSE),
+copied as it stands; refresh it with wllama, since the copyright years move.
+
+transformers.js is one npm package, and the wasm comes from the ONNX Runtime
+build that package depends on - read the version out of its `package.json`
+rather than taking the latest:
+
+```sh
+npm pack @huggingface/transformers@<version>
+tar xzf huggingface-transformers-<version>.tgz -C transformers --strip-components=1
+cp transformers/dist/transformers.min.js transformers/LICENSE vendor/transformers/
+npm pack onnxruntime-web@<the version transformers/package.json names>
+tar xzf onnxruntime-web-<that version>.tgz -C ort --strip-components=1
+cp ort/dist/ort-wasm-simd-threaded.mjs ort/dist/ort-wasm-simd-threaded.wasm vendor/transformers/
+```
+
+`vendor/transformers/LICENSE-onnxruntime` is
+[ONNX Runtime's licence file](https://github.com/microsoft/onnxruntime/blob/main/LICENSE),
+copied as it stands. Finish with `npm run check:whisper`.
+
+The character maps and the standard fonts inside pdf.js have licences of their
+own (Adobe's for the cmaps, Foxit's for the `.pfb` fonts), which is why those
+two files are copied along with the data. The package's Liberation fonts are
+`.ttf` files that are not vendored here, so their licence is not either.
 
 Update the version tables above and the cache version in `sw.js` in the same
 commit.

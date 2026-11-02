@@ -8,6 +8,7 @@
     "serve": "node tests/serve.js",
     "check": "npm run lint && find app.js lib tests -name '*.js' -not -path '*/node_modules/*' -print0 | xargs -0 -n1 node --check",
     "check:model": "node tests/model-check.js",
+    "check:whisper": "node tests/whisper-check.js",
     "lint": "eslint .",
     "llms-full": "node tests/llms.js",
     "test": "node --test tests/unit/",

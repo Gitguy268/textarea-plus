@@ -56,6 +56,14 @@ const chromiumOnly = ENGINE_NAME === 'chromium' ? test : test.skip
  */
 const notWebkit = ENGINE_NAME === 'webkit' ? test.skip : test
 
+/**
+ * Two tabs talking over WebRTC. On a Mac with the application firewall on,
+ * the peer-to-peer UDP of Playwright's unsigned browsers between two tabs is
+ * dropped (checks go out, none arrive), so there it is skipped. Elsewhere it
+ * runs in every engine; it has not yet been run in CI.
+ */
+const peerToPeer = process.platform === 'darwin' ? test.skip : test
+
 test.before(async () => {
   await fs.mkdir(DOWNLOADS, {recursive: true})
   server = await listen(0)
@@ -1985,6 +1993,9 @@ test('startup: panels rarely opened are fetched when their entry is used', async
     'tasks-panel.js',
     'writing-tools.js',
     'gemma.js',
+    'organise.js',
+    'board-panel.js',
+    'sticky.js',
     // Reading files, writing them, and mirroring to a folder: none of it is
     // part of a session that only types.
     'open.js',
@@ -2388,6 +2399,54 @@ test('the two column toggle flips and persists', async () => {
   )
 })
 
+test('a label on glass still reads 4.5:1 with the note’s own ink behind it', async () => {
+  // axe cannot judge text over a gradient or a backdrop: it reports those as
+  // incomplete, which the scan below does not fail on. So the worst case is
+  // worked out here instead - the thinnest part of the fill, with nothing
+  // behind the label but the page, and then nothing but the note's own ink.
+  try {
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({colorScheme: scheme})
+      const glass = await page.evaluate(() => {
+        const probe = document.createElement('span')
+        document.body.append(probe)
+        const rgb = (value) => {
+          probe.style.color = value
+          return getComputedStyle(probe).color.match(/[\d.]+/g).slice(0, 3).map(Number)
+        }
+        const root = getComputedStyle(document.documentElement)
+        const alpha = parseFloat(root.getPropertyValue('--glass-thin')) / 100
+        const fill = rgb('var(--elevated)')
+        const ink = rgb('var(--text)')
+        const paper = rgb(root.backgroundColor)
+        probe.remove()
+
+        const luminance = (colour) => {
+          const [r, g, b] = colour.map((c) => (c / 255 <= 0.03928 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4))
+          return 0.2126 * r + 0.7152 * g + 0.0722 * b
+        }
+        const contrast = (a, b) => {
+          const [high, low] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+          return (high + 0.05) / (low + 0.05)
+        }
+        const over = (behind) => fill.map((c, i) => c * alpha + behind[i] * (1 - alpha))
+        return {
+          isGlass: document.documentElement.classList.contains('glass'),
+          alpha,
+          onPaper: contrast(ink, over(paper)),
+          onInk: contrast(ink, over(ink)),
+        }
+      })
+      assert.ok(glass.isGlass, 'glass is on from the boot, for the button')
+      assert.ok(glass.alpha > 0 && glass.alpha < 1, `${scheme}: the fill is translucent`)
+      assert.ok(glass.onPaper >= 4.5, `${scheme}: ${glass.onPaper.toFixed(2)}:1 over the page`)
+      assert.ok(glass.onInk >= 4.5, `${scheme}: ${glass.onInk.toFixed(2)}:1 over the note's ink`)
+    }
+  } finally {
+    await page.emulateMedia({colorScheme: null})
+  }
+})
+
 chromiumOnly('the glass row switches the refraction on the floating panels', async () => {
   const filters = () =>
     page.evaluate(() => document.querySelectorAll('filter[id^="lg-filter"]').length)
@@ -2416,6 +2475,14 @@ chromiumOnly('the glass row switches the refraction on the floating panels', asy
   )
   assert.ok((await menuAlpha()) < 1, 'the menu should be translucent while the effect is on')
 
+  // The material that makes a translucent box read as glass: a bevel on the
+  // panel, and on the round button too - which is glass from the boot by
+  // stylesheet, and bends the page once the module has arrived with the menu.
+  const bevel = (id) => page.evaluate((el) => getComputedStyle(document.getElementById(el)).boxShadow, id)
+  assert.match(await bevel('menu'), /inset/, 'the menu should carry the bevel')
+  assert.match(await bevel('button'), /inset/, 'the button should carry the bevel')
+  await page.waitForFunction(() => document.getElementById('button').style.backdropFilter !== '')
+
   // The row takes all of it away again: inline style, filter definitions, root
   // class, translucent background — the opaque box it was before the feature.
   await page.locator('#menu-glass').click()
@@ -2424,6 +2491,8 @@ chromiumOnly('the glass row switches the refraction on the floating panels', asy
   assert.equal(await page.evaluate(() => localStorage.getItem('textarea:glass')), 'off')
   assert.equal(await filters(), 0, 'the filter definitions should go with the effect')
   assert.equal(await menuAlpha(), 1, 'the menu should be opaque again')
+  assert.equal(await page.evaluate(() => document.getElementById('button').style.backdropFilter), '')
+  assert.doesNotMatch(await bevel('button'), /inset/, 'the button should be the flat one it was')
 
   // A dialog opened while it is off stays plain.
   await openMenu()
@@ -2705,11 +2774,33 @@ test('a custom font file joins the note fonts, applies, survives a reload, and c
   )
   await page.waitForFunction(() => [...document.fonts].some((face) => face.family === 'fixture'))
 
-  // Removing it takes the choice back to the default in the same breath -
-  // a family with no shelf behind it must not stay the stored preference.
+  // A font left on the shelf by an earlier session, with the note on a
+  // system stack: the boot loads no face, so picking it in Settings has to.
+  const registered = () =>
+    page.evaluate(() => [...document.fonts].some((face) => face.family === 'fixture'))
+  await page.evaluate(() => localStorage.setItem('textarea:font', 'system'))
+  await freshEditor()
+  assert.equal(await registered(), false, 'a font the note does not use is not loaded at boot')
   await openMenu()
   await page.locator('#menu-settings').click()
   await panel.waitFor({state: 'visible'})
+  await panel.locator('#setting-font').selectOption('custom-fixture')
+  await page.waitForFunction(() => [...document.fonts].some((face) => face.family === 'fixture'))
+  assert.equal(await applied(), '"fixture", system-ui')
+
+  // Picking it again does not register a second face.
+  await panel.locator('#setting-font').selectOption('system')
+  await panel.locator('#setting-font').selectOption('custom-fixture')
+  await page.waitForFunction(
+    () => document.documentElement.style.getPropertyValue('--note-font') === '"fixture", system-ui',
+  )
+  assert.equal(
+    await page.evaluate(() => [...document.fonts].filter((face) => face.family === 'fixture').length),
+    1,
+  )
+
+  // Removing it takes the choice back to the default in the same breath -
+  // a family with no shelf behind it must not stay the stored preference.
   assert.equal(await panel.locator('#setting-font').inputValue(), 'custom-fixture')
   const removed = await notification(() =>
     panel.getByRole('button', {name: 'Remove fixture'}).click(),
@@ -2718,6 +2809,7 @@ test('a custom font file joins the note fonts, applies, survives a reload, and c
   assert.equal(await panel.locator('#setting-font').inputValue(), 'system')
   assert.equal(await applied(), 'system-ui')
   assert.equal(await panel.locator('#setting-font option[value^="custom-"]').count(), 0)
+  assert.equal(await registered(), false, 'the face leaves the document with the font')
 
   await page.keyboard.press('Escape')
   await panel.waitFor({state: 'detached'})
@@ -2862,11 +2954,11 @@ test('a settings option can be a line of text, written once and read back', asyn
   await page.evaluate(() => delete window.__textOption)
 })
 
-test('a wikilink opens the note its title names, and is off until it is switched on', async () => {
-  // Both halves start from the shipped defaults, whatever an interrupted
-  // run left behind.
+test('a wikilink opens the note its title names, and stays text while it is switched off', async () => {
+  // textarea-plus ships the switch on, so this starts it off on purpose: what
+  // is under test is the switch and what it changes.
   await page.evaluate(() => {
-    localStorage.removeItem('textarea:wikilinks')
+    localStorage.setItem('textarea:wikilinks', 'off')
     localStorage.removeItem('textarea:wikilink-create')
   })
 
@@ -2934,7 +3026,7 @@ test('a wikilink opens the note its title names, and is off until it is switched
     {what: 'Beta to be back on screen'},
   )
 
-  // Off by default: the brackets are only brackets.
+  // Off: the brackets are only brackets.
   assert.equal(await page.locator('.md-wiki').count(), 0, 'the switch starts off')
 
   // The switch and its choice live in the settings panel, and the choice is
@@ -2946,19 +3038,15 @@ test('a wikilink opens the note its title names, and is off until it is switched
   assert.equal(await settings.locator('#setting-wikilinks-create').isVisible(), true)
   await closeSettings()
 
-  // Now both tokens are links, and following one asks before replacing the
-  // note on screen - the same question the documents panel asks - and lands
-  // on the note its title names.
+  // Now both tokens are links. textarea-plus: following one lands on the note
+  // its title names without a question, since the note on screen is kept.
   assert.equal(await page.locator('.md-wiki').count(), 2)
   await page.locator('.md-wiki', {hasText: 'alpha'}).click()
-  await page.locator('dialog.dialog[aria-label="Replace the current note?"]').waitFor({
-    state: 'visible',
-  })
-  await page.locator('.dialog-button-primary').click()
   await until(
     () => document.querySelector('article').textContent.includes('The target.'),
     {what: 'Alpha to open from the link'},
   )
+  assert.equal(await page.locator('dialog.dialog').count(), 0, 'opened without asking')
 
   // Back to Beta for the other half: what a title that matches nothing does
   // is the reader's choice under the switch.
@@ -2979,8 +3067,6 @@ test('a wikilink opens the note its title names, and is off until it is switched
   await settings.locator('#setting-wikilinks-create').check()
   await closeSettings()
   await page.locator('.md-wiki', {hasText: 'Ghost'}).click()
-  await page.locator('dialog.dialog[aria-label="Start a new note?"]').waitFor({state: 'visible'})
-  await page.locator('.dialog-button-primary').click()
   await until(
     () => document.querySelector('article').textContent === '# Ghost',
     {what: 'the new note to carry its heading'},
@@ -2994,7 +3080,7 @@ test('a wikilink opens the note its title names, and is off until it is switched
     {what: 'the created note to reach the library'},
   )
 
-  // Leave the switches as they were found: off, and creating.
+  // Leave the switches at what ships.
   await page.evaluate(() => {
     localStorage.removeItem('textarea:wikilinks')
     localStorage.removeItem('textarea:wikilink-create')
@@ -3223,11 +3309,15 @@ test('the quick switcher jumps to a note from the keyboard and can be switched o
     await page.keyboard.press(key)
     await palette.waitFor({state: 'visible'})
   }
-  const enterOnScreen = async () => {
-    await page.locator('dialog.dialog[aria-label="Replace the current note?"]').waitFor({
-      state: 'visible',
-    })
-    await page.locator('.dialog-button-primary').click()
+  // textarea-plus: the note on screen is already in the library, so the
+  // switcher opens the next one without asking, the way the sidebar and the
+  // tabs do. Checked once the note has opened, when a question would be up.
+  const askedNothing = async () => {
+    assert.equal(
+      await page.locator('dialog.dialog[aria-label="Replace the current note?"]').count(),
+      0,
+      'opened without asking',
+    )
   }
 
   // Two notes to jump between; Beta's text carries a phrase its title does
@@ -3266,11 +3356,11 @@ test('the quick switcher jumps to a note from the keyboard and can be switched o
     'the only match is already the active one',
   )
   await page.keyboard.press('Enter')
-  await enterOnScreen()
   await until(
     () => document.querySelector('article').textContent.includes('Holds xylophone'),
     {what: 'Beta to open from the palette'},
   )
+  await askedNothing()
 
   // Escape puts it away without opening anything.
   await jump('Control+k')
@@ -3317,11 +3407,11 @@ test('the quick switcher jumps to a note from the keyboard and can be switched o
   )
   assert.match(await palette.locator('.switcher-hint').textContent(), /xylophone/)
   await page.keyboard.press('Enter')
-  await enterOnScreen()
   await until(
     () => document.querySelector('article').textContent.includes('Holds xylophone'),
     {what: 'Beta to open from the text match'},
   )
+  await askedNothing()
 
   // Which chord carries it is a choice too: E instead of K, and the old
   // key stops being listened for the moment the choice moves.
@@ -4149,6 +4239,97 @@ test('the writing tools panel runs a tool through an injected model and hands th
   })
 })
 
+test('the writing tools offer image tools only with the vision model, and send the chosen picture', async () => {
+  await page.evaluate(async () => {
+    const {createWritingTools} = await import('/lib/writing-tools.js')
+    const state = {model: null, asked: null, prompts: null, replaced: null}
+    const panel = createWritingTools({
+      ensureModel: async (onProgress, signal, model) => {
+        state.asked = model
+        return {
+          run: async (messages) => {
+            state.prompts = messages
+            return 'A red square.'
+          },
+        }
+      },
+      getModel: () => state.model,
+      setModel: (id) => {
+        state.model = id
+      },
+      getText: () => 'The note.',
+      getSelection: () => ({start: 4, end: 4, text: ''}),
+      getTools: () => ['improve', 'describe', 'ocr'],
+      getInstructions: () => '',
+      onReplace: (text, selection) => {
+        state.replaced = {text, selection}
+      },
+    })
+    window.__vision = state
+    window.__visionPanel = panel
+    document.body.append(panel.element)
+    panel.open()
+  })
+
+  const panelEl = page.locator('#writing-panel')
+  const tools = panelEl.locator('.writing-tool')
+  const shelf = async () => tools.evaluateAll((buttons) => buttons.map((button) => button.dataset.tool))
+
+  // Gemma first: no image tools, no image row.
+  assert.equal(await panelEl.locator('.writing-model select').inputValue(), 'gemma')
+  assert.deepEqual(await shelf(), ['improve'])
+  assert.equal(await panelEl.locator('.writing-image').isVisible(), false)
+
+  // The vision model puts them on the shelf and remembers the choice.
+  await panelEl.locator('.writing-model select').selectOption('minicpm-v')
+  assert.equal(await page.evaluate(() => window.__vision.model), 'minicpm-v')
+  assert.deepEqual(await shelf(), ['improve', 'describe', 'ocr'])
+
+  // An image tool with no image says so and keeps Run out of action.
+  await panelEl.locator('.writing-tool[data-tool="describe"]').click()
+  assert.equal(await panelEl.locator('.writing-image').isVisible(), true)
+  assert.equal((await panelEl.locator('.writing-status').textContent()).trim(), 'Choose an image to work on.')
+  assert.equal(await panelEl.locator('.writing-run').isDisabled(), true)
+
+  // A 1x1 PNG: re-encoded as JPEG for the model, shown in the panel.
+  await panelEl.locator('.writing-image input[type="file"]').setInputFiles({
+    name: 'dot.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    ),
+  })
+  await until(() => !document.querySelector('.writing-preview').hidden, {what: 'the preview'})
+  assert.equal(await panelEl.locator('.writing-run').isDisabled(), false)
+
+  await panelEl.locator('.writing-run').click()
+  await until(() => document.querySelector('.writing-output').textContent === 'A red square.', {what: 'the answer'})
+  const sent = await page.evaluate(() => ({
+    model: window.__vision.asked,
+    parts: window.__vision.prompts[1].content.map((part) => ({
+      type: part.type,
+      jpeg: part.type === 'image' ? new Uint8Array(part.data)[0] === 0xff && new Uint8Array(part.data)[1] === 0xd8 : null,
+    })),
+  }))
+  assert.equal(sent.model, 'minicpm-v')
+  assert.deepEqual(sent.parts, [{type: 'image', jpeg: true}, {type: 'text', jpeg: null}])
+
+  // With no selection, the answer goes in at the cursor.
+  assert.equal((await panelEl.locator('.writing-replace').textContent()).trim(), 'Insert at the cursor')
+  await panelEl.locator('.writing-replace').click()
+  assert.deepEqual(await page.evaluate(() => window.__vision.replaced), {
+    text: 'A red square.',
+    selection: {start: 4, end: 4},
+  })
+
+  await page.evaluate(() => {
+    window.__visionPanel.element.remove()
+    delete window.__vision
+    delete window.__visionPanel
+  })
+})
+
 test('the writing tools act on the selection when the reader asks for it, and only then', async () => {
   // Selection-awareness is two seams and everything that follows from
   // them: what is selected, and whether the reader asked for it. The
@@ -4443,21 +4624,23 @@ test('the writing tools row, shelf, instructions and selection switch are the re
 })
 
 test('a task in the note draws as a checkbox and ticks off in place', async () => {
-  // The whole feature sits behind one switch, and the switch ships off: a
-  // note written without it renders exactly as it always did. Throwing it
+  // The whole feature sits behind one switch. textarea-plus ships it on, so it
+  // is thrown off here: a note written without it renders exactly as it always
+  // did. Throwing it
   // draws the checkbox over the bracket the reader typed without a
   // keystroke, and a click on the box writes the one character the task
   // is made of - through the editor, so it lands on the undo stack and
   // reaches the library like any other edit.
   const pref = (key) => page.evaluate((k) => localStorage.getItem(k), key)
+  await page.evaluate(() => localStorage.setItem('textarea:tasks', 'off'))
 
-  // Off, as it ships: the Settings row says so, and the note below stays
+  // Off: the Settings row says so, and the note below stays
   // a plain list - no checkbox anywhere, text untouched.
   await openMenu()
   await page.locator('#menu-settings').click()
   const settings = page.locator('dialog.dialog-settings')
   await settings.waitFor({state: 'visible'})
-  assert.equal(await settings.locator('#setting-tasks').isChecked(), false, 'tasks ship off')
+  assert.equal(await settings.locator('#setting-tasks').isChecked(), false, 'tasks are off')
   await page.keyboard.press('Escape')
   await settings.waitFor({state: 'detached'})
 
@@ -4545,10 +4728,55 @@ test('a task in the note draws as a checkbox and ticks off in place', async () =
   await page.evaluate(() => localStorage.removeItem('textarea:tasks'))
 })
 
+test('a dash is not a bullet, and two dashes and a space make a task', async () => {
+  await page.evaluate(() => localStorage.setItem('textarea:tasks', 'off'))
+  await setNote('')
+  await page.locator('article').focus()
+
+  // One dash and a space is a sentence that starts with a dash.
+  await page.keyboard.type('- plain')
+  await page.keyboard.press('Enter')
+  // Two dashes wait for their space: until it comes they are only dashes.
+  await page.keyboard.type('--')
+  await settleHistory()
+  assert.equal(await noteText(), '- plain\n--')
+  assert.equal(await page.locator('article .md-li').count(), 0, 'no bullet for a dash')
+
+  // The space is what asks: the text becomes the task every other reader
+  // knows, and the switch is thrown because a box was asked for.
+  await page.keyboard.type(' ')
+  await page.waitForFunction(() => document.querySelector('article').textContent === '- plain\n- [ ] ')
+  await page.waitForFunction(() => document.querySelectorAll('article .md-task').length === 1)
+  assert.equal(await page.evaluate(() => localStorage.getItem('textarea:tasks')), 'on')
+  assert.equal(
+    await page.evaluate(() => getComputedStyle(document.querySelector('article .md-li'), '::before').content),
+    'none',
+    'the box stands alone, with no bullet beside it',
+  )
+
+  // The caret is after the box, so the task's words follow straight on.
+  await page.keyboard.type('water')
+  await page.waitForFunction(() => document.querySelector('article').textContent === '- plain\n- [ ] water')
+  await page.locator('article .md-task').click()
+  await page.waitForFunction(() => document.querySelector('article').textContent === '- plain\n- [x] water')
+
+  // Indented, and with the switch already on: the indent stays, and one
+  // undo gives the two dashes back.
+  await setNote('')
+  await page.locator('article').focus()
+  await page.keyboard.type('  -- ')
+  await page.waitForFunction(() => document.querySelector('article').textContent === '  - [ ] ')
+  await settleHistory()
+  await page.keyboard.press('Control+z')
+  await page.waitForFunction(() => document.querySelector('article').textContent === '  -- ')
+
+  await page.evaluate(() => localStorage.removeItem('textarea:tasks'))
+})
+
 test('the tasks panel gathers every open task in the library and opens its note', async () => {
-  // The shipped defaults, whatever an interrupted run left behind.
+  // Tasks off and finished ones hidden, whatever an interrupted run left behind.
   await page.evaluate(() => {
-    localStorage.removeItem('textarea:tasks')
+    localStorage.setItem('textarea:tasks', 'off')
     localStorage.removeItem('textarea:tasks-done')
   })
   const pref = (key) => page.evaluate((k) => localStorage.getItem(k), key)
@@ -4565,11 +4793,11 @@ test('the tasks panel gathers every open task in the library and opens its note'
   // The row is a switch-gated action like Backup's: with the feature off
   // there is no row to click, and the settings entry offers no option.
   await openMenu()
-  assert.equal(await page.locator('#menu-tasks').isVisible(), false, 'the row ships hidden')
+  assert.equal(await page.locator('#menu-tasks').isVisible(), false, 'the row is hidden while off')
   await page.locator('#menu-settings').click()
   const settings = page.locator('dialog.dialog-settings')
   await settings.waitFor({state: 'visible'})
-  assert.equal(await settings.locator('#setting-tasks').isChecked(), false, 'tasks ship off')
+  assert.equal(await settings.locator('#setting-tasks').isChecked(), false, 'tasks are off')
   assert.equal(
     await settings.locator('#setting-tasks-done').isVisible(),
     false,
@@ -5877,13 +6105,16 @@ test('axe finds no WCAG A or AA failure in either theme, on the page or in its p
       for (const key of ['stats', 'backlinks', 'writing', 'wikilinks', 'tasks']) {
         localStorage.setItem(`textarea:${key}`, 'on')
       }
+      // A kept search, so My documents is scanned with every kind of chip
+      // it can show; the tag in the note below supplies the other kind.
+      localStorage.setItem('textarea:filters', '[{"name":"Tagged","query":"#tagged"}]')
     })
     await page.goto(`${server.origin}/?theme=${theme}`)
     await page.waitForFunction(() => Boolean(globalThis.textarea))
     await setNote(
       '# Title\n\nSome **bold**, *slanted*, ~~struck~~ and `code`.\n\n' +
         'https://example.com and mail@example.com and [[Other]]\n\n' +
-        '- [ ] a task\n- [x] done\n1. one\n\n```\nfence\n```\n',
+        '- [ ] a task\n- [x] done\n1. one\n\n```\nfence\n```\n\n#tagged\n',
     )
     await saveNow()
     await page.evaluate(axe)
@@ -5902,6 +6133,19 @@ test('axe finds no WCAG A or AA failure in either theme, on the page or in its p
     await openMenu()
     await scan(`${theme}: the menu`)
     await page.keyboard.press('Escape')
+
+    // The speech panel has no remembered state to reload into, so it is
+    // opened from its row and measured on its own, with a transcript on show.
+    await openMenu()
+    await page.locator('#menu-speech').click()
+    await page.locator('#speech-panel').waitFor({state: 'visible'})
+    await page.evaluate(() => {
+      const panel = document.querySelector('#speech-panel')
+      panel.querySelector('.writing-output').textContent = 'A transcript.'
+      panel.querySelector('.writing-result').hidden = false
+    })
+    await scan(`${theme}: the speech panel`)
+    await page.locator('#speech-panel .writing-close').click()
 
     for (const row of ['settings', 'documents', 'export', 'encryption', 'trash']) {
       await openMenu()
@@ -5945,7 +6189,7 @@ test('axe finds no WCAG A or AA failure in either theme, on the page or in its p
 
   // Leave the next test the profile it expects.
   await page.evaluate(() => {
-    for (const key of ['stats', 'backlinks', 'writing', 'wikilinks', 'tasks']) {
+    for (const key of ['stats', 'backlinks', 'writing', 'wikilinks', 'tasks', 'filters']) {
       localStorage.removeItem(`textarea:${key}`)
     }
   })
@@ -6105,6 +6349,268 @@ test('the documents panel sorts by edit, by creation and by title, and remembers
   }
 })
 
+/** My documents, opened from the menu and waited for. */
+async function openDocuments() {
+  await openMenu()
+  await page.locator('#menu-documents').click()
+  const panel = page.locator('dialog.dialog-library')
+  await panel.locator('.document-row').first().waitFor()
+  return panel
+}
+
+/** The titles on the cards, once they are the ones expected. */
+async function cardTitles(panel, expected) {
+  const titles = () => panel.locator('.document-row:not(.document-row-empty) .document-title').allTextContents()
+  for (let tries = 0; tries < 100; tries++) {
+    if ((await titles()).join() === expected.join()) break
+    await page.waitForTimeout(40)
+  }
+  assert.deepEqual(await titles(), expected)
+}
+
+test('a tag is drawn in the note, counted in My documents, and filters the list', async () => {
+  const note = '# Groceries\n\nmilk #home and item #1'
+  await setNote(note)
+  await saveNow()
+  try {
+    // Drawn, and only the tag: the text of the note is what was typed.
+    assert.deepEqual(await page.locator('article .md-tag').allTextContents(), ['#home'])
+    assert.equal(await noteText(), note)
+
+    await page.evaluate(async () => {
+      const library = await import('/lib/library.js')
+      await library.putDocument({id: 'tag-plain', title: 'Plain', text: '# Plain\n\nno tag', updated: 100})
+      await library.putDocument({id: 'tag-nested', title: 'Chores', text: '# Chores\n\n#home/garden', updated: 50})
+    })
+    const panel = await openDocuments()
+    await cardTitles(panel, ['Groceries', 'Plain', 'Chores'])
+
+    // The chip counts the notes that carry the tag itself; the filter it
+    // writes also finds the tags nested under it.
+    const chip = panel.locator('.library-chip', {hasText: /^#home 1$/})
+    assert.equal(await chip.getAttribute('aria-pressed'), 'false')
+    await chip.click()
+    await cardTitles(panel, ['Groceries', 'Chores'])
+    assert.equal(await panel.locator('.dialog-search').inputValue(), '#home')
+    assert.equal(await panel.locator('.library-chip', {hasText: /^#home 1$/}).getAttribute('aria-pressed'), 'true')
+
+    // The same chip takes the filter back out.
+    await panel.locator('.library-chip', {hasText: /^#home 1$/}).click()
+    await cardTitles(panel, ['Groceries', 'Plain', 'Chores'])
+    await page.keyboard.press('Escape')
+    await panel.waitFor({state: 'detached'})
+
+    // The switch is only how a note draws its tags.
+    await page.evaluate(() => localStorage.setItem('textarea:tags', 'off'))
+    await setNote(note + ' ')
+    assert.equal(await page.locator('article .md-tag').count(), 0)
+  } finally {
+    await page.evaluate(() => localStorage.removeItem('textarea:tags'))
+  }
+})
+
+test('a pinned note leads the list and stays pinned while it is typed in', async () => {
+  await setNote('# Pinned one')
+  await saveNow()
+  await page.evaluate(async () => {
+    const library = await import('/lib/library.js')
+    const far = Date.now() + 60_000
+    await library.putDocument({id: 'pin-a', title: 'Apple', text: '# Apple', updated: far + 2})
+    await library.putDocument({id: 'pin-b', title: 'banana', text: '# banana', updated: far + 1})
+  })
+  const row = () =>
+    page.evaluate(async () => (await import('/lib/library.js')).getDocument(globalThis.textarea.documentId))
+
+  const panel = await openDocuments()
+  await cardTitles(panel, ['Apple', 'banana', 'Pinned one'])
+  await panel.getByRole('button', {name: 'Pin Pinned one', exact: true}).click()
+  await cardTitles(panel, ['Pinned one', 'Apple', 'banana'])
+  assert.equal(
+    await panel.getByRole('button', {name: 'Unpin Pinned one', exact: true}).getAttribute('aria-pressed'),
+    'true',
+  )
+
+  await panel.locator('.library-chip', {hasText: /^Pinned$/}).click()
+  await cardTitles(panel, ['Pinned one'])
+  await page.keyboard.press('Escape')
+  await panel.waitFor({state: 'detached'})
+
+  // The autosave rewrites the row whole, and so does the write a closing tab
+  // makes. Neither may take the pin with it.
+  await setNote('# Pinned one\n\nmore')
+  await saveNow()
+  assert.equal((await row()).pinned, true, 'the autosave kept the pin')
+  assert.equal((await row()).text, '# Pinned one\n\nmore')
+
+  await page.evaluate(() => {
+    globalThis.textarea.editor.replace('# Pinned one\n\nclosing')
+    dispatchEvent(new Event('pagehide'))
+  })
+  await until(
+    async () => {
+      const {getDocument} = await import('/lib/library.js')
+      return (await getDocument(globalThis.textarea.documentId))?.text === '# Pinned one\n\nclosing'
+    },
+    {what: 'the closing write to reach the library'},
+  )
+  assert.equal((await row()).pinned, true, 'the closing write kept the pin')
+})
+
+test('an archived note leaves the list until the archive is asked for', async () => {
+  await page.evaluate(async () => {
+    const library = await import('/lib/library.js')
+    const far = Date.now() + 60_000
+    await library.putDocument({id: 'arc-a', title: 'Apple', text: '# Apple #fruit', updated: far + 2})
+    await library.putDocument({id: 'arc-b', title: 'banana', text: '# banana\n\n#fruit', updated: far + 1})
+  })
+  const stored = () => page.evaluate(async () => (await import('/lib/library.js')).getDocument('arc-b'))
+  const before = await stored()
+  const panel = await openDocuments()
+  await cardTitles(panel, ['Apple', 'banana', 'Textarea'])
+
+  await panel.getByRole('button', {name: 'Archive banana', exact: true}).click()
+  await cardTitles(panel, ['Apple', 'Textarea'])
+  assert.equal((await stored()).archived, true)
+  // Marking a note is not editing it: it keeps the moment it was last written.
+  assert.equal((await stored()).updated, before.updated)
+  // An archived note is out of the tag counts as well as out of the list.
+  assert.equal(await panel.locator('.library-chip', {hasText: '#fruit'}).count(), 0)
+
+  await panel.locator('.library-chip', {hasText: /^Archived$/}).click()
+  await cardTitles(panel, ['banana'])
+  assert.equal(await panel.locator('.dialog-search').inputValue(), 'is:archived')
+
+  // Out of the archive, and back in the list it left.
+  await panel.getByRole('button', {name: 'Unarchive banana', exact: true}).click()
+  await panel.locator('.document-row-empty').waitFor()
+  await panel.locator('.dialog-search').fill('')
+  await cardTitles(panel, ['Apple', 'banana', 'Textarea'])
+  assert.equal(
+    await page.evaluate(async () => 'archived' in (await (await import('/lib/library.js')).getDocument('arc-b'))),
+    false,
+    'a mark taken off leaves nothing behind on the row',
+  )
+  await page.keyboard.press('Escape')
+})
+
+test('the calendar lights the days notes were written, and a day filters the list', async () => {
+  const day = await page.evaluate(async () => {
+    const library = await import('/lib/library.js')
+    const {dayOf} = await import('/lib/filter.js')
+    const noon = new Date()
+    noon.setHours(12, 0, 0, 0)
+    const earlier = noon.getTime() - 3 * 86_400_000
+    await library.putDocument({id: 'cal-a', title: 'Earlier', text: '# Earlier', created: earlier, updated: earlier})
+    return {today: dayOf(Date.now()), earlier: dayOf(earlier)}
+  })
+  const panel = await openDocuments()
+  await cardTitles(panel, ['Textarea', 'Earlier'])
+
+  const calendar = panel.locator('.library-calendar')
+  assert.match(await calendar.getAttribute('aria-label'), /2 active days/)
+  assert.equal(await calendar.locator(`[data-day="${day.today}"]`).getAttribute('data-level'), '1')
+  assert.equal(await calendar.locator(`[data-day="${day.earlier}"]`).getAttribute('data-level'), '1')
+
+  // A lit square is the filter for its day, and the date field says so.
+  await calendar.locator(`[data-day="${day.earlier}"]`).click()
+  await cardTitles(panel, ['Earlier'])
+  assert.equal(await panel.locator('.dialog-search').inputValue(), `on:${day.earlier}`)
+  assert.equal(await panel.getByLabel('Show the notes of one day').inputValue(), day.earlier)
+  assert.equal(await calendar.locator('[data-current="true"]').getAttribute('data-day'), day.earlier)
+
+  // The date field is the same filter from the keyboard: another day
+  // replaces the one asked for, and emptying it takes the filter away.
+  await panel.getByLabel('Show the notes of one day').fill(day.today)
+  await cardTitles(panel, ['Textarea'])
+  assert.equal(await panel.locator('.dialog-search').inputValue(), `on:${day.today}`)
+  await panel.getByLabel('Show the notes of one day').fill('')
+  await cardTitles(panel, ['Textarea', 'Earlier'])
+  assert.equal(await panel.locator('.dialog-search').inputValue(), '')
+  await page.keyboard.press('Escape')
+})
+
+test('a jotted note goes into the library without leaving the panel', async () => {
+  await setNote('# On screen')
+  await saveNow()
+  const panel = await openDocuments()
+  await cardTitles(panel, ['On screen'])
+
+  await panel.getByLabel('Quick note').fill('# Jotted\n\nthree words here #inbox')
+  await panel.getByLabel('Quick note').press('ControlOrMeta+Enter')
+  // By title: the note on screen is saved again by its own pause while the
+  // panel is open, so which of the two was written last is not this test's.
+  await panel.locator('.document-title', {hasText: 'Jotted'}).waitFor()
+  assert.equal(await panel.getByLabel('Quick note').inputValue(), '')
+  await panel.locator('.library-chip', {hasText: /^#inbox 1$/}).waitFor()
+
+  // The button is the same save, and an empty box saves nothing.
+  await panel.getByRole('button', {name: 'Save note'}).click()
+  await panel.getByLabel('Quick note').fill('no heading on this one')
+  await panel.getByRole('button', {name: 'Save note'}).click()
+  await panel.locator('.document-title', {hasText: 'Textarea'}).waitFor()
+  assert.equal(await panel.locator('.document-row:not(.document-row-empty)').count(), 3)
+
+  const stored = await page.evaluate(async () => {
+    const all = await (await import('/lib/library.js')).listDocuments()
+    const jotted = all.find((entry) => entry.title === 'Jotted')
+    return {count: all.length, text: jotted.text, words: jotted.words, own: jotted.id !== globalThis.textarea.documentId}
+  })
+  // Six words as the statistics panel counts them: the two marks are words to it.
+  assert.deepEqual(stored, {count: 3, text: '# Jotted\n\nthree words here #inbox', words: 6, own: true})
+  // The note on screen was never put away.
+  assert.equal(await noteText(), '# On screen')
+  await page.keyboard.press('Escape')
+})
+
+test('the timeline and a saved filter are remembered across a reload', async () => {
+  await setNote('# Groceries\n\nmilk and eggs\n#home')
+  await saveNow()
+  try {
+    let panel = await openDocuments()
+    const view = panel.getByLabel('Show notes as')
+    assert.equal(await view.inputValue(), 'board', 'the board it always was is what it opens as')
+    await view.selectOption('timeline')
+    await panel.locator('.document-list[data-view="timeline"]').waitFor()
+    // The timeline card holds the note's own lines, not one flattened line.
+    assert.equal(await panel.locator('.document-preview').first().textContent(), 'milk and eggs\n#home')
+    assert.equal(await page.evaluate(() => localStorage.getItem('textarea:library-view')), 'timeline')
+
+    // A search is offered for keeping only once there is one.
+    assert.equal(await panel.locator('.library-chip-save').count(), 0)
+    await panel.locator('.dialog-search').fill('#home eggs')
+    await panel.locator('.library-chip-save').click()
+    await panel.locator('.library-chip-saved', {hasText: '#home eggs'}).waitFor()
+    assert.equal(await panel.locator('.library-chip-save').count(), 0, 'a kept search is not offered again')
+    assert.equal(
+      await page.evaluate(() => localStorage.getItem('textarea:filters')),
+      '[{"name":"#home eggs","query":"#home eggs"}]',
+    )
+
+    await freshEditor()
+    panel = await openDocuments()
+    assert.equal(await panel.getByLabel('Show notes as').inputValue(), 'timeline')
+    assert.equal(await panel.locator('.document-list').getAttribute('data-view'), 'timeline')
+
+    // The chip puts its search back in the box, and takes it out again.
+    const kept = panel.locator('.library-chip-saved', {hasText: '#home eggs'})
+    await kept.click()
+    assert.equal(await panel.locator('.dialog-search').inputValue(), '#home eggs')
+    await cardTitles(panel, ['Groceries'])
+    await panel.locator('.library-chip-saved', {hasText: '#home eggs'}).click()
+    assert.equal(await panel.locator('.dialog-search').inputValue(), '')
+
+    await panel.getByRole('button', {name: 'Remove the saved filter #home eggs'}).click()
+    await panel.locator('.library-chip-saved').waitFor({state: 'detached'})
+    assert.equal(await page.evaluate(() => localStorage.getItem('textarea:filters')), '[]')
+    await page.keyboard.press('Escape')
+  } finally {
+    await page.evaluate(() => {
+      localStorage.removeItem('textarea:library-view')
+      localStorage.removeItem('textarea:filters')
+    })
+  }
+})
+
 test('a word-count goal shows in the statistics only once one is set', async () => {
   await setNote('one two three four five')
   await openMenu()
@@ -6188,6 +6694,10 @@ test('on paper there is the note and nothing else', async () => {
         menu: shown('#menu'),
         stats: shown('#stats-panel'),
         bubble: shown('#notification'),
+        // textarea-plus: the shell stays on screen.
+        sidebar: shown('#sidebar'),
+        tabs: shown('#tabs'),
+        bodyPadding: getComputedStyle(document.body).paddingLeft,
         padding: article.paddingLeft,
         color: article.color,
         page: getComputedStyle(document.documentElement).backgroundColor,
@@ -6198,6 +6708,9 @@ test('on paper there is the note and nothing else', async () => {
       menu: false,
       stats: false,
       bubble: false,
+      sidebar: false,
+      tabs: false,
+      bodyPadding: '0px',
       padding: '0px',
       color: 'rgb(0, 0, 0)',
       page: 'rgb(255, 255, 255)',
@@ -6258,6 +6771,176 @@ test('a model download can be cancelled, and cancelling is not an error', async 
     await page.evaluate(() => {
       delete globalThis.__modelBroken
       document.querySelector('#cancel-probe')?.remove()
+    })
+  }
+})
+
+test('the speech panel transcribes a file through an injected engine and hands the text back', async () => {
+  // The same seam the writing tools are tested through: a fake engine and a
+  // fake decoder stand in for 249 MB of Whisper, so what is under test is
+  // everything they are strangers to - the language that rides along, where
+  // the progress and the transcript land, what Cancel and Insert do.
+  await page.evaluate(async () => {
+    const {createSpeechPanel} = await import('/lib/speech-panel.js')
+    const state = {language: 'nl', decoded: null, asked: null, inserted: null, finish: null}
+    state.release = new Promise((resolve) => {
+      state.finish = resolve
+    })
+    const panel = createSpeechPanel({
+      decode: async (blob) => {
+        if (globalThis.__speechBroken) throw new Error('this is not audio the browser can decode')
+        state.decoded = blob.size
+        return new Float32Array(16_000)
+      },
+      // A download that waits to be released, or to be called off.
+      ensureModel: (onProgress, signal, model) =>
+        new Promise((resolve, reject) => {
+          state.model = model
+          onProgress('Fetching model… 67 MB of 249 MB')
+          signal.addEventListener('abort', () => reject(signal.reason))
+          void state.release.then(() =>
+            resolve({
+              transcribe: async (samples, {language}) => {
+                state.asked = {samples: samples.length, language}
+                return ' Hallo wereld. '
+              },
+            }),
+          )
+        }),
+      getLanguage: () => state.language,
+      setLanguage: (code) => {
+        state.language = code
+      },
+      // Remembered as turbo, on a browser that cannot run it.
+      getModel: () => 'turbo',
+      setModel: (id) => {
+        state.chosenModel = id
+      },
+      gpu: async () => false,
+      onInsert: (text) => {
+        state.inserted = text
+      },
+    })
+    panel.element.id = 'speech-probe'
+    // Pinned on screen: a probe under its own id has none of the panel's
+    // CSS, and one left in the flow sits below the fold, where WebKit drops
+    // a click that has to scroll to reach its button.
+    panel.element.style.cssText = 'position: fixed; top: 16px; left: 16px; z-index: 5; background: #fff'
+    globalThis.__speech = state
+    globalThis.__speechPanel = panel
+    document.body.append(panel.element)
+    panel.open()
+  })
+
+  const probe = page.locator('#speech-probe')
+  const status = probe.locator('.writing-status')
+  const choose = probe.getByRole('button', {name: 'Choose file'})
+  const cancel = probe.getByRole('button', {name: 'Cancel'})
+  const memo = {name: 'memo.wav', mimeType: 'audio/wav', buffer: Buffer.from('sixteen bytes ok')}
+  try {
+    await probe.waitFor({state: 'visible'})
+    const select = probe.getByLabel('Spoken language')
+    assert.equal(await select.inputValue(), 'nl', 'the remembered language is the one on show')
+    assert.equal(await select.locator('option').count(), 99)
+    await select.selectOption('de')
+    assert.equal(await page.evaluate(() => globalThis.__speech.language), 'de', 'a choice is handed back to be kept')
+    assert.equal(await cancel.isHidden(), true, 'nothing to cancel before there is audio')
+
+    // No WebGPU: turbo is listed, says why it cannot be had, and the
+    // remembered choice falls back to the model that runs everywhere.
+    const model = probe.getByLabel('Model')
+    await until(() => document.querySelector('#speech-probe option[value="turbo"]').disabled)
+    assert.equal(await model.inputValue(), 'small')
+    assert.match(await model.locator('option[value="turbo"]').textContent(), /no WebGPU/)
+
+    // A download in flight: it says how far it is, and it can be called off.
+    await probe.locator('.speech-input').setInputFiles(memo)
+    await cancel.waitFor({state: 'visible'})
+    assert.match(await status.textContent(), /67 MB of 249 MB/)
+    assert.equal(await choose.isDisabled(), true, 'one transcription at a time')
+    await cancel.click()
+    await cancel.waitFor({state: 'hidden'})
+    assert.equal(await status.textContent(), 'Cancelled.')
+    assert.equal(await status.evaluate((element) => element.classList.contains('error')), false)
+    assert.equal(await choose.isDisabled(), false, 'and the panel is ready for another go')
+
+    // The same file again - the input was cleared, so it is still a change.
+    await page.evaluate(() => globalThis.__speech.finish())
+    await probe.locator('.speech-input').setInputFiles(memo)
+    const output = probe.locator('.writing-output')
+    await output.waitFor({state: 'visible'})
+    assert.equal(await output.textContent(), 'Hallo wereld.', 'trimmed: Whisper leads with a space')
+    assert.equal(await status.textContent(), '')
+    assert.deepEqual(await page.evaluate(() => [globalThis.__speech.decoded, globalThis.__speech.asked]), [
+      16,
+      {samples: 16_000, language: 'de'},
+    ])
+    assert.equal(await page.evaluate(() => globalThis.__speech.model), 'small', 'the engine is asked for the model on show')
+
+    await probe.getByRole('button', {name: 'Insert at the cursor'}).click()
+    assert.equal(await page.evaluate(() => globalThis.__speech.inserted), 'Hallo wereld.')
+    assert.equal(await output.isHidden(), true, 'an inserted transcript is not offered twice')
+
+    // A file that is not audio says so, in red, and leaves the panel usable.
+    await page.evaluate(() => {
+      globalThis.__speechBroken = true
+    })
+    await probe.locator('.speech-input').setInputFiles(memo)
+    await until(() => document.querySelector('#speech-probe .writing-status').classList.contains('error'))
+    assert.match(await status.textContent(), /not audio the browser can decode/)
+    assert.equal(await choose.isDisabled(), false)
+
+    await probe.getByRole('button', {name: 'Close speech to text'}).click()
+    assert.equal(await page.evaluate(() => globalThis.__speechPanel.isOpen()), false)
+  } finally {
+    await page.evaluate(() => {
+      delete globalThis.__speech
+      delete globalThis.__speechPanel
+      delete globalThis.__speechBroken
+      document.querySelector('#speech-probe')?.remove()
+    })
+  }
+})
+
+test('the speech to text row opens its panel without an engine, and the language is remembered', async () => {
+  // The app side of the seam. No test presses Record or picks a file here: a
+  // real transcription is a real 249 MB download, and `npm run check:whisper`
+  // is where that happens.
+  const panel = page.locator('#speech-panel')
+  try {
+    await openMenu()
+    await page.locator('#menu-speech').click()
+    await panel.waitFor({state: 'visible'})
+
+    const opened = await page.evaluate(() => performance.getEntriesByType('resource').map((entry) => entry.name))
+    assert.ok(
+      opened.some((name) => name.endsWith('/lib/speech-panel.js')),
+      'the panel module arrives on the click that opens it',
+    )
+    assert.ok(
+      !opened.some((name) => name.includes('whisper') || name.includes('/vendor/transformers/')),
+      'no engine of any kind before there is audio to transcribe',
+    )
+
+    const select = panel.getByLabel('Spoken language')
+    assert.equal(
+      await select.inputValue(),
+      await page.evaluate(() => navigator.language.toLowerCase().split('-')[0]),
+      'a reader who never chose starts on the browser’s language',
+    )
+    await select.selectOption('nl')
+    assert.equal(await page.evaluate(() => localStorage.getItem('textarea:speech-language')), 'nl')
+
+    await panel.getByRole('button', {name: 'Close speech to text'}).click()
+    await panel.waitFor({state: 'hidden'})
+    await openMenu()
+    await page.locator('#menu-speech').click()
+    await panel.waitFor({state: 'visible'})
+    assert.equal(await select.inputValue(), 'nl', 'and the choice is still there the next time')
+  } finally {
+    await page.evaluate(() => {
+      localStorage.removeItem('textarea:speech-language')
+      document.querySelector('#speech-panel .writing-close')?.click()
     })
   }
 })
@@ -6510,6 +7193,797 @@ test('a library that stops keeping notes says so, once', async () => {
   }
 })
 
+peerToPeer('Send to a device carries a note to another tab over WebRTC, after it accepts', async () => {
+  // Two real tabs, two real peer connections, host candidates: everything a
+  // phone on the same Wi-Fi does except the camera, which the paste box and
+  // the copy buttons stand in for. The codes travel through a stubbed
+  // clipboard, which every engine can read back.
+  const tab = async (path) => {
+    const opened = await context.newPage()
+    await opened.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {writeText: async (text) => void (globalThis.__copied = text)},
+      })
+    })
+    await opened.goto(server.origin + path)
+    await opened.waitForFunction(() => Boolean(globalThis.textarea))
+    return opened
+  }
+  const sender = await tab('/')
+  let receiver = null
+  try {
+    await sender.evaluate(() => globalThis.textarea.editor.replace('# Nearby\n\nSent without a server.'))
+    await sender.locator('#button').click()
+    await sender.locator('#menu-send').click()
+    const sendPanel = sender.locator('dialog.dialog-nearby')
+    await sendPanel.locator('.qr-figure svg').waitFor({state: 'visible'})
+    await sendPanel.getByRole('button', {name: 'Copy link'}).click()
+    const link = await sender.evaluate(() => globalThis.__copied)
+    // Made on localhost, so it points a phone at the deployed copy.
+    assert.match(link, /^https:\/\/gitguy268-textarea\.vercel\.app\/#rtc=1o[A-Za-z0-9_-]+$/)
+
+    receiver = await tab('/' + link.slice(link.indexOf('#')))
+    const receivePanel = receiver.locator('dialog.dialog-nearby')
+    await receivePanel.getByRole('button', {name: 'Connect'}).click()
+    assert.doesNotMatch(await receiver.evaluate(() => location.hash), /rtc=/, 'the pairing code leaves the address bar')
+    await receivePanel.getByRole('button', {name: 'Copy code'}).click()
+    const answer = await receiver.evaluate(() => globalThis.__copied)
+    assert.match(answer, /^1a[A-Za-z0-9_-]+$/)
+
+    await sendPanel.getByLabel('Or paste the code').fill(answer)
+    await sendPanel.getByRole('button', {name: 'Connect'}).click()
+    await receivePanel.getByRole('button', {name: 'Accept'}).waitFor({state: 'visible', timeout: 20_000})
+    assert.match(await receivePanel.getByRole('status').textContent(), /Accept “Nearby” \(\d+ bytes\)\?/)
+    await receivePanel.getByRole('button', {name: 'Accept'}).click()
+
+    await sendPanel.waitFor({state: 'detached'})
+    await receiver.waitForFunction(
+      () => document.querySelector('article')?.textContent === '# Nearby\n\nSent without a server.',
+      undefined,
+      {polling: 100, timeout: 10_000},
+    )
+    await sender.waitForFunction(() => document.querySelector('#notification').textContent === 'Sent to the other device')
+  } finally {
+    await sender.close()
+    await receiver?.close()
+  }
+})
+
+test('a pairing link opens Receive on a library row of its own, not the last one used', async () => {
+  // The origin remembers the last note it wrote. A tab opened on a #rtc= link
+  // is empty, and if it kept that id what arrives would be saved over it.
+  const first = await context.newPage()
+  await first.goto(server.origin + '/')
+  await first.waitForFunction(() => Boolean(globalThis.textarea))
+  await first.evaluate(async () => {
+    globalThis.textarea.editor.replace('# Kept\n\nstill here')
+    await globalThis.textarea.save()
+  })
+  await first.close()
+
+  const second = await context.newPage()
+  try {
+    await second.goto(server.origin + '/#rtc=x')
+    const panel = second.locator('dialog.dialog-nearby')
+    await panel.getByRole('button', {name: 'Close'}).click()
+    await panel.waitFor({state: 'detached'})
+    const texts = await second.evaluate(async () => {
+      await globalThis.textarea.openFiles([new File(['# Arrived\n\nfrom far'], 'r.md')])
+      await globalThis.textarea.save()
+      const {listDocuments} = await import('/lib/library.js')
+      return (await listDocuments()).map((row) => row.text)
+    })
+    assert.ok(texts.includes('# Kept\n\nstill here'), 'the earlier note keeps its row')
+    assert.ok(texts.includes('# Arrived\n\nfrom far'), 'what arrived has a row of its own')
+  } finally {
+    await second.close()
+  }
+})
+
+test('Receive from a device turns away a code that is not one', async () => {
+  await reset()
+  await openMenu()
+  await page.locator('#menu-receive').click()
+  const panel = page.locator('dialog.dialog-nearby')
+  await panel.getByLabel('Or paste the code').fill('https://example.com/#not-a-code')
+  await panel.getByRole('button', {name: 'Connect'}).click()
+  await panel.getByRole('alert').filter({hasText: 'not a pairing code'}).waitFor({state: 'visible'})
+  await panel.getByRole('button', {name: 'Close'}).click()
+  await panel.waitFor({state: 'detached'})
+})
+
+test('the shell: views list the notes they ask for, tabs follow the notes opened, Ctrl/Cmd+K reaches both', async () => {
+  await reset()
+  await page.evaluate(() => {
+    for (const key of ['textarea:tabs', 'textarea:sidebar-view', 'textarea:sidebar']) localStorage.removeItem(key)
+  })
+  // Three notes the way the CLI and the web app write them: a capture with no
+  // heading, a project, and one with an open task.
+  await page.evaluate(async () => {
+    const library = await import('/lib/library.js')
+    for (const text of ['buy milk #home', '# Roadmap\n#project\n\nthe plan', '# Lisbon\n\n- [ ] book the tram']) {
+      await library.putDocument({text, title: text.startsWith('# ') ? text.split('\n')[0].slice(2) : 'Textarea'})
+    }
+    await globalThis.textarea.save()
+  })
+  const sidebar = page.locator('#sidebar')
+  const view = (name) => sidebar.locator(`.sidebar-view[data-view="${name}"]`)
+  const listed = () => sidebar.locator('.sidebar-note').allTextContents()
+  await until(() => document.querySelector('[data-view="inbox"] .sidebar-count')?.textContent === '1', {
+    what: 'the Inbox count',
+  })
+
+  await view('inbox').click()
+  assert.deepEqual(await listed(), ['buy milk #home'], 'Inbox is the capture with no heading')
+  await view('projects').click()
+  assert.deepEqual(await listed(), ['Roadmap'])
+  assert.equal(await view('projects').getAttribute('aria-current'), 'page')
+
+  // Opening from the sidebar asks nothing: the note on screen is already kept.
+  await sidebar.getByRole('button', {name: 'Roadmap'}).click()
+  await until(() => globalThis.textarea.article.textContent.startsWith('# Roadmap'), {what: 'Roadmap to open'})
+  assert.equal(await page.locator('dialog.dialog').count(), 0, 'no question on the way')
+  const current = page.locator('#tabs .tab-open[aria-current="page"]')
+  await until(() => document.querySelector('#tabs .tab-open[aria-current="page"]')?.textContent === 'Roadmap', {
+    what: 'the Roadmap tab',
+  })
+
+  // Today makes the day's note once, as `text today` would, and finds it after.
+  const day = await page.evaluate(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })
+  await view('today').click()
+  await until(() => globalThis.textarea.article.textContent.startsWith('# 2'), {what: "the day's note"})
+  assert.equal((await noteText()).split('\n')[0], `# ${day}`)
+  await sidebar.getByRole('button', {name: 'Roadmap'}).click()
+  await until(() => globalThis.textarea.article.textContent.startsWith('# Roadmap'), {what: 'Roadmap again'})
+  await view('today').click()
+  await until(() => globalThis.textarea.article.textContent.startsWith('# 2'), {what: "the day's note again"})
+  const days = await page.evaluate(async (title) => {
+    const library = await import('/lib/library.js')
+    return (await library.listDocuments()).filter((entry) => entry.text.startsWith(`# ${title}`)).length
+  }, day)
+  assert.equal(days, 1, 'one note for the day, however often Today is clicked')
+
+  // Closing the tab on screen hands the screen to its neighbour.
+  // The tabs: the blank note reset() left, Roadmap, and the day after it.
+  await until(() => document.querySelector('#tabs .tab-open[aria-current="page"]')?.textContent.startsWith('2'), {
+    what: "the day's tab to be current",
+  })
+  assert.deepEqual((await page.locator('#tabs .tab-open').allTextContents()).slice(-2), ['Roadmap', day])
+  await page.locator('#tabs .tab-close').last().click()
+  await until(() => globalThis.textarea.article.textContent.startsWith('# Roadmap'), {what: 'the neighbour tab'})
+  assert.equal(await current.textContent(), 'Roadmap')
+
+  // Ctrl/Cmd+K: the views are in the same list as the notes.
+  await page.keyboard.press('ControlOrMeta+k')
+  const switcher = page.locator('dialog.dialog-switcher')
+  await switcher.waitFor({state: 'visible'})
+  await switcher.locator('input').fill('Go to Wiki')
+  await page.keyboard.press('Enter')
+  await until(() => document.querySelector('[data-view="wiki"]')?.getAttribute('aria-current') === 'page', {
+    what: 'the Wiki view',
+  })
+
+  // Ctrl/Cmd+\ takes the shell away and brings it back, remembered.
+  await page.keyboard.press('ControlOrMeta+Backslash')
+  assert.equal(await page.evaluate(() => document.documentElement.classList.contains('shell')), false)
+  assert.equal(await page.evaluate(() => localStorage.getItem('textarea:sidebar')), 'off')
+  await page.keyboard.press('ControlOrMeta+Backslash')
+  assert.equal(await page.evaluate(() => document.documentElement.classList.contains('shell')), true)
+
+  await page.evaluate(() => {
+    for (const key of ['textarea:tabs', 'textarea:sidebar-view', 'textarea:sidebar']) localStorage.removeItem(key)
+  })
+})
+
+test('databases: a saved query as a table, board, calendar and list, every edit a line of a note', async () => {
+  await reset()
+  const today = await page.evaluate(() => {
+    const now = new Date()
+    const two = (n) => String(n).padStart(2, '0')
+    return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`
+  })
+  await page.evaluate(async (today) => {
+    const library = await import('/lib/library.js')
+    for (const [id, title, rest] of [
+      ['row-a', 'Alpha', `#project\nkeep  this  spacing\n\nstatus:: Todo\nowner:: Ann\ndue:: ${today}`],
+      ['row-b', 'Beta', '#project\n\nstatus:: Doing'],
+      ['row-c', 'Gamma', 'not a project'],
+    ]) {
+      await library.putDocument({id, title, text: `# ${title}\n\n${rest}\n`, style: 'color: red', words: 3})
+    }
+    await globalThis.textarea.save()
+  }, today)
+  const row = (id) => page.evaluate((id) => import('/lib/library.js').then((library) => library.getDocument(id)), id)
+  const textOf = async (id) => (await row(id)).text
+  const panel = page.locator('#database')
+  const untilRow = async (id, check, what) => {
+    const deadline = Date.now() + 30_000
+    while (!check(await textOf(id))) {
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`)
+      await page.waitForTimeout(40)
+    }
+  }
+
+  // Made through Ctrl/Cmd+K, it is a note whose text says what it is.
+  await until(() => document.querySelector('#sidebar .sidebar-more'), {what: 'the sidebar'})
+  await page.locator('#sidebar').getByRole('button', {name: 'New database…'}).click()
+  const dialog = page.locator('dialog', {hasText: 'New database'})
+  await dialog.locator('input[name="name"]').fill('Active')
+  await dialog.locator('input[name="query"]').fill('#project')
+  await dialog.getByRole('button', {name: 'Create'}).click()
+  await panel.getByRole('heading', {name: 'Active'}).waitFor()
+  assert.equal(
+    await page.evaluate(() => globalThis.textarea.article.textContent),
+    '# Active\n\nview:: table\nquery:: `#project`\n',
+    'the database is a note',
+  )
+  assert.equal(await page.locator('article').first().isVisible(), false, 'it takes the article\u2019s place')
+  await until(() => document.querySelectorAll('#database tbody tr').length === 2, {what: 'two rows'})
+
+  // A cell edit is one line of that note, and nothing else about it moves.
+  const before = await row('row-a')
+  const status = panel.locator('input[aria-label="status of Alpha"]')
+  await status.fill('Doing')
+  await page.keyboard.press('Tab')
+  await untilRow('row-a', (text) => text.includes('status:: Doing'), 'the edit written')
+  const after = await row('row-a')
+  assert.equal(after.text, before.text.replace('status:: Todo', 'status:: Doing'), 'no other byte of the note moved')
+  assert.equal(after.style, 'color: red', 'the note keeps its style')
+  assert.equal(after.title, 'Alpha', 'and its title')
+  assert.equal(after.words, 12, 'and its count follows the text')
+  assert.ok(after.updated > before.updated, 'and counts as edited, so sync writes it')
+  assert.equal(after.hash, '', 'and an old address cannot claim the old text back')
+  // Where Tab lands differs by engine: WebKit skips buttons.
+  await page.waitForTimeout(300)
+  assert.ok(
+    await page.evaluate(() => document.querySelector('#database').contains(document.activeElement)),
+    'the redraw leaves the focus where Tab took it',
+  )
+
+  // Two cells of one row in quick succession: neither edit is lost.
+  await panel.locator('input[aria-label="owner of Alpha"]').fill('Bea')
+  await panel.locator('input[aria-label="owner of Beta"]').fill('Cy')
+  await panel.locator('input[aria-label="status of Beta"]').fill('Late')
+  await panel.getByRole('button', {name: 'Add column'}).focus()
+  await untilRow('row-b', (text) => text.includes('owner:: Cy') && text.includes('status:: Late'), 'both edits of one row')
+  assert.match(await textOf('row-a'), /owner:: Bea/)
+
+  // Emptying a cell takes the line out.
+  await panel.locator('input[aria-label="owner of Beta"]').focus()
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.press('Backspace')
+  await panel.getByRole('button', {name: 'Add column'}).focus()
+  await untilRow('row-b', (text) => !text.includes('owner::'), 'the line removed')
+
+  // Sort is a line of the database.
+  await panel.getByRole('button', {name: 'status', exact: true}).click()
+  await until(() => globalThis.textarea.article.textContent.includes('sort:: status'), {what: 'the sort saved'})
+
+  // A column named before any note has it.
+  await panel.getByRole('button', {name: 'Add column'}).click()
+  const column = page.locator('dialog', {hasText: 'New column'})
+  await column.locator('input[name="key"]').fill('priority')
+  await column.getByRole('button', {name: 'Add'}).click()
+  await panel.locator('input[aria-label="priority of Beta"]').fill('high')
+  await page.keyboard.press('Tab')
+  await untilRow('row-b', (text) => text.includes('priority:: high'), 'a value in the new column')
+
+  // A new row carries what the query asks for.
+  await panel.getByRole('button', {name: 'New row'}).click()
+  const added = page.locator('dialog', {hasText: 'New row'})
+  await added.locator('input[name="title"]').fill('Delta')
+  await added.getByRole('button', {name: 'Add'}).click()
+  await panel.getByRole('button', {name: 'Delta'}).waitFor()
+
+  // The query changes what is found, and is saved.
+  await panel.getByRole('textbox', {name: 'Query'}).fill('#project status:doing')
+  await page.keyboard.press('Enter')
+  await until(() => document.querySelectorAll('#database tbody tr').length === 1, {what: 'one row left'})
+  assert.ok((await page.evaluate(() => globalThis.textarea.article.textContent)).includes('query:: `#project status:doing`'))
+  await panel.getByRole('textbox', {name: 'Query'}).fill('#project')
+  await page.keyboard.press('Enter')
+  await until(() => document.querySelectorAll('#database tbody tr').length === 3, {what: 'three rows back'})
+
+  // The board: the select moves a card from the keyboard.
+  await panel.getByRole('combobox', {name: 'Layout'}).selectOption('board')
+  const lane = (name) => panel.getByRole('region', {name, exact: true})
+  await lane('Doing').waitFor()
+  await panel.getByRole('button', {name: 'Add column'}).click()
+  const lanes = page.locator('dialog', {hasText: 'New column'})
+  await lanes.locator('input[name="value"]').fill('Done')
+  await lanes.getByRole('button', {name: 'Add'}).click()
+  await lane('Done').waitFor()
+  const move = panel.getByRole('combobox', {name: 'Move Alpha'})
+  await move.focus()
+  await move.selectOption('Done')
+  await lane('Done').getByRole('button', {name: 'Alpha'}).waitFor()
+  assert.match(await textOf('row-a'), /status:: Done/)
+
+  // And so does a drag.
+  await lane('Late').locator('.database-card', {hasText: 'Beta'}).dragTo(lane('Done'))
+  await lane('Done').getByRole('button', {name: 'Beta'}).waitFor()
+  assert.match(await textOf('row-b'), /status:: Done/)
+
+  // A file dragged onto a column is still the page's: the overlay goes away again.
+  await lane('Done').evaluate((element) => {
+    const dataTransfer = new DataTransfer()
+    dataTransfer.items.add(new File(['x'], 'x.txt', {type: 'text/plain'}))
+    const fire = (type) => element.dispatchEvent(new DragEvent(type, {bubbles: true, cancelable: true, dataTransfer}))
+    fire('dragenter')
+    fire('dragover')
+    fire('dragleave')
+  })
+  assert.equal(await page.locator('#drop-overlay.visible').count(), 0)
+  await lane('Done').evaluate((element) => {
+    const dataTransfer = new DataTransfer()
+    dataTransfer.items.add(new File(['x'], 'x.png', {type: 'image/png'}))
+    const fire = (type) => element.dispatchEvent(new DragEvent(type, {bubbles: true, cancelable: true, dataTransfer}))
+    fire('dragenter')
+    fire('drop')
+  })
+  assert.equal(await page.locator('#drop-overlay.visible').count(), 0, 'a file dropped on a column clears the overlay')
+
+  // A new card in a column has that column's value.
+  await lane('Done').getByRole('button', {name: 'New row'}).click()
+  const card = page.locator('dialog', {hasText: 'New row'})
+  await card.locator('input[name="title"]').fill('Epsilon')
+  await card.getByRole('button', {name: 'Add'}).click()
+  await lane('Done').getByRole('button', {name: 'Epsilon'}).waitFor()
+
+  // The calendar: a row sits on its day, and Alt+arrow moves it.
+  await panel.getByRole('combobox', {name: 'Layout'}).selectOption('calendar')
+  const chip = panel.locator(`[data-day="${today}"] .database-chip`, {hasText: 'Alpha'})
+  await chip.waitFor()
+  await chip.focus()
+  await page.keyboard.press('Alt+ArrowDown')
+  const weekOn = await page.evaluate((today) => {
+    const [y, m, d] = today.split('-').map(Number)
+    const next = new Date(y, m - 1, d + 7)
+    const two = (n) => String(n).padStart(2, '0')
+    return `${next.getFullYear()}-${two(next.getMonth() + 1)}-${two(next.getDate())}`
+  }, today)
+  await untilRow('row-a', (text) => text.includes(`due:: ${weekOn}`), 'the date moved a week')
+  // A note with no date gets one through the list under the month.
+  const undated = panel.locator('input[aria-label="due of Epsilon"]')
+  await undated.fill(today)
+  await page.keyboard.press('Enter')
+  await panel.locator(`[data-day="${today}"] .database-chip`, {hasText: 'Epsilon'}).waitFor()
+
+  // The list.
+  await panel.getByRole('combobox', {name: 'Layout'}).selectOption('list')
+  await until(() => document.querySelectorAll('#database .database-list > li').length === 4, {what: 'four rows listed'})
+  assert.equal(await panel.getByRole('button', {name: 'Gamma'}).count(), 0, 'a note the query does not find')
+
+  // A cell left by clicking its own note: the edit reaches the editor and stays,
+  // from the sidebar's older copy of the row and from the table's title.
+  await panel.getByRole('combobox', {name: 'Layout'}).selectOption('table')
+  const sidebarRow = page.locator('#sidebar [data-view="notes"]')
+  await sidebarRow.click()
+  await panel.locator('input[aria-label="owner of Beta"]').fill('Raced')
+  await page.locator('#sidebar .sidebar-note', {hasText: 'Beta'}).click()
+  await until(() => globalThis.textarea.article.textContent.startsWith('# Beta'), {what: 'Beta opened'})
+  assert.match(await page.evaluate(() => globalThis.textarea.article.textContent), /owner:: Raced/, 'the editor has the edit')
+  await page.evaluate(() => globalThis.textarea.save())
+  assert.match(await textOf('row-b'), /owner:: Raced/, 'and the save that followed kept it')
+  await page.locator('#tabs').getByRole('button', {name: 'Active', exact: true}).click()
+  await panel.getByRole('heading', {name: 'Active'}).waitFor()
+  await until(() => document.querySelector('input[aria-label="owner of Beta"]')?.value === 'Raced', {what: 'the table caught up'})
+  await panel.locator('input[aria-label="owner of Beta"]').fill('Raced again')
+  await panel.getByRole('button', {name: 'Beta'}).click()
+  await until(() => globalThis.textarea.article.textContent.startsWith('# Beta'), {what: 'Beta opened by its title'})
+  assert.match(await page.evaluate(() => globalThis.textarea.article.textContent), /owner:: Raced again/)
+  await page.evaluate(() => globalThis.textarea.save())
+  assert.match(await textOf('row-b'), /owner:: Raced again/)
+  await page.locator('#tabs').getByRole('button', {name: 'Active', exact: true}).click()
+  await panel.getByRole('heading', {name: 'Active'}).waitFor()
+  await panel.getByRole('combobox', {name: 'Layout'}).selectOption('list')
+  await until(() => document.querySelectorAll('#database .database-list > li').length === 4, {what: 'the list again'})
+
+  // Clicking a title opens the note as text, and a tab returns to the database.
+  await panel.getByRole('button', {name: 'Alpha'}).click()
+  await until(() => globalThis.textarea.article.textContent.startsWith('# Alpha'), {what: 'the note opened'})
+  assert.equal(await panel.isVisible(), false)
+  assert.match(await page.evaluate(() => globalThis.textarea.article.textContent), /status:: Done/, 'the editor has the written text')
+  await page.locator('#tabs').getByRole('button', {name: 'Active', exact: true}).click()
+  await panel.getByRole('heading', {name: 'Active'}).waitFor()
+
+  // As text and back; typing the lines into a note does not snatch it away.
+  await panel.getByRole('button', {name: 'Edit as text'}).click()
+  assert.equal(await page.locator('article').first().isVisible(), true)
+  await page.getByRole('button', {name: 'Show as database'}).click()
+  await panel.getByRole('heading', {name: 'Active'}).waitFor()
+
+  // A reload comes back to the database.
+  await page.evaluate(() => globalThis.textarea.save())
+  await page.reload()
+  await panel.getByRole('heading', {name: 'Active'}).waitFor()
+  assert.equal(await page.locator('article').first().isVisible(), false)
+
+  await page.locator('#tabs').getByRole('button', {name: 'New note'}).click()
+  await until(() => globalThis.textarea.article.textContent === '', {what: 'a new note'})
+  await page.locator('article').first().click()
+  await page.keyboard.type('# Typed\n\nview:: table\nquery:: x\n')
+  await page.waitForTimeout(800)
+  assert.equal(await page.locator('article').first().isVisible(), true, 'still the note being typed')
+
+  // The database stays out of its own rows, and the sidebar lists it.
+  await until(() => [...document.querySelectorAll('#sidebar .sidebar-note')].some((row) => row.textContent === 'Active'), {what: 'listed'})
+})
+
+test('tasks: quick add, the lists, keys, repeats, a board and a timeline, every change a line of a note', async () => {
+  await reset()
+  const days = await page.evaluate(() => {
+    const two = (n) => String(n).padStart(2, '0')
+    const at = (offset) => {
+      const now = new Date()
+      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset)
+      return `${day.getFullYear()}-${two(day.getMonth() + 1)}-${two(day.getDate())}`
+    }
+    return {today: at(0), tomorrow: at(1), week: at(7), ago: at(-3)}
+  })
+  await page.evaluate(async (days) => {
+    const library = await import('/lib/library.js')
+    await library.putDocument({
+      id: 'plan',
+      title: 'Plan',
+      style: 'color: red',
+      text: `# Plan\n\n#project\narea:: Home\n\n- [ ] overdue 📅 ${days.ago}\nkeep  this  line\n- [ ] later 📅 ${days.week}\n- [ ] sometime\n- [ ] weekly 🔁 every week 📅 ${days.today}\n\`\`\`\n- [ ] in code\n\`\`\`\n`,
+    })
+    await globalThis.textarea.save()
+  }, days)
+  const panel = page.locator('#tasks')
+  const planText = () =>
+    page.evaluate(() => import('/lib/library.js').then((library) => library.getDocument('plan').then((row) => row.text)))
+  const untilPlan = async (check, what) => {
+    const deadline = Date.now() + 30_000
+    while (!check(await planText())) {
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}: ${await planText()}`)
+      await page.waitForTimeout(40)
+    }
+  }
+  const pick = (name) => panel.locator(`[data-list="${name}"]`).click()
+  const row = (name) => panel.locator('.task-row', {hasText: name})
+
+  // The sidebar's Tasks opens the screen on Today, and only real tasks are in it.
+  await until(() => document.querySelector('#sidebar [data-view="tasks"]'), {what: 'the sidebar'})
+  await page.locator('#sidebar [data-view="tasks"]').click()
+  await row('overdue').waitFor()
+  assert.equal(await page.locator('article').first().isVisible(), false)
+  assert.equal(await row('in code').count(), 0, 'a fence is code')
+  assert.equal(await row('later').count(), 0, 'not today')
+  assert.match(await panel.locator('.tasks-heading').first().textContent(), /Home · Plan/, 'by area and note')
+  await pick('upcoming')
+  await row('later').waitFor()
+  await pick('anytime')
+  await row('sometime').waitFor()
+
+  // Quick add says what it read, and writes it to a Tasks note.
+  const box = panel.getByRole('textbox', {name: 'Quick add a task'})
+  await box.fill('call mum tomorrow 3pm #home p1 every week')
+  assert.match(await panel.locator('.tasks-add-preview').textContent(), /call mum #home: due .*reminder at 15:00, highest, every week/)
+  await page.keyboard.press('Enter')
+  await pick('upcoming')
+  await row('call mum').waitFor()
+  const quick = await page.evaluate(async () => {
+    const library = await import('/lib/library.js')
+    const all = await library.listDocuments()
+    return all.find((entry) => entry.title === 'Tasks')?.text
+  })
+  assert.equal(quick, `# Tasks\n\n- [ ] call mum #home ⏰ ${days.tomorrow} 15:00 🔺 🔁 every week 📅 ${days.tomorrow}\n`)
+  // Two at once make one Tasks note, with both in it.
+  await box.fill('second task')
+  await page.keyboard.press('Enter')
+  await box.fill('third task')
+  await page.keyboard.press('Enter')
+  await pick('anytime')
+  await row('second task').waitFor()
+  assert.equal(await page.evaluate(() => import('/lib/library.js').then(async (library) => (await library.listDocuments()).filter((entry) => entry.title === 'Tasks').length)), 1, 'one Tasks note')
+
+  // Keys on a row: each one a change to that line and no other byte.
+  await pick('today')
+  await row('overdue').focus()
+  await page.keyboard.press('p')
+  await untilPlan((text) => text.includes('overdue 📅') && /overdue .*🔺/.test(text), 'the priority')
+  await row('overdue').locator('.task-meta', {hasText: 'Highest'}).waitFor()
+  await page.keyboard.press('s')
+  await untilPlan((text) => text.includes('- [/] overdue'), 'in progress')
+  await row('overdue').locator('.task-meta', {hasText: 'In progress'}).waitFor()
+  assert.equal(await page.evaluate(() => document.activeElement.classList.contains('task-row')), true, 'the focus stays on the row')
+  assert.match(await planText(), /keep {2}this {2}line/)
+
+  // A quick pair of keys: neither is lost.
+  await page.keyboard.press('p')
+  await page.keyboard.press('p')
+  await page.keyboard.press('z')
+  await untilPlan((text) => /overdue .*#someday/.test(text), 'three keys in a row')
+  assert.match((await planText()).split('\n')[5], /🔼/, 'and each counted from the one before')
+  await pick('someday')
+  await row('overdue').waitFor()
+  await row('overdue').focus()
+  await page.keyboard.press('z')
+  await untilPlan((text) => !text.includes('#someday'), 'off Someday')
+
+  // n puts it in next week's cycle, and the cycle filter finds it.
+  await pick('today')
+  await row('overdue').focus()
+  await page.keyboard.press('n')
+  await untilPlan((text) => /overdue .*⏳/.test(text), 'a cycle')
+  await panel.getByRole('combobox', {name: 'Cycle'}).selectOption({label: 'Next week'})
+  await row('overdue').waitFor()
+  assert.equal(await row('weekly').count(), 0, 'not in that cycle')
+  await panel.getByRole('combobox', {name: 'Cycle'}).selectOption({label: 'All cycles'})
+
+  // Finishing a repeat makes the next one above it, and the Logbook has this one.
+  // The second press lands before the redraw and must finish nothing further.
+  await row('weekly').waitFor()
+  await row('weekly').focus()
+  await page.keyboard.press('x')
+  await page.keyboard.press('x')
+  await untilPlan((text) => text.includes(`- [x] weekly 🔁 every week 📅 ${days.today} ✅ ${days.today}`), 'done')
+  assert.ok((await planText()).includes(`- [ ] weekly 🔁 every week 📅 ${days.week}\n- [x] weekly`), 'the next above it')
+  await page.waitForTimeout(300)
+  assert.equal((await planText()).match(/weekly/g).length, 2, 'one finished and one next, no third')
+  await pick('logbook')
+  await row('weekly').waitFor()
+  await row('weekly').getByRole('checkbox').uncheck()
+  await untilPlan((text) => text.includes(`- [ ] weekly 🔁 every week 📅 ${days.today}\n`), 'unticked')
+
+  // Escape goes back to the note on screen.
+  await row('weekly').first().focus()
+  await page.keyboard.press('Escape')
+  assert.equal(await panel.isVisible(), false)
+  await page.locator('#sidebar [data-view="tasks"]').click()
+
+  // Enter opens the note at that line.
+  await pick('anytime')
+  await row('sometime').focus()
+  await page.keyboard.press('Enter')
+  await until(() => globalThis.textarea.article.textContent.startsWith('# Plan'), {what: 'the note opened'})
+  assert.equal(await panel.isVisible(), false)
+  const caret = await page.evaluate(() => globalThis.textarea.editor.selection().start)
+  assert.ok((await planText()).slice(caret).startsWith('- [ ] sometime'), 'the caret is on its line')
+
+  // With that note on screen the editor takes the write, and an unsaved word stays.
+  await page.keyboard.press('ArrowRight')
+  await page.evaluate(() => {
+    const {editor, article} = globalThis.textarea
+    const at = article.textContent.indexOf('sometime')
+    editor.select(at, at)
+    editor.insert('word ')
+  })
+  await page.locator('#sidebar [data-view="tasks"]').click()
+  await pick('anytime')
+  await row('word sometime').waitFor()
+  await row('word sometime').focus()
+  await page.keyboard.press('x')
+  await until(() => globalThis.textarea.article.textContent.includes('- [x] word sometime ✅'), {what: 'the editor following'})
+  await untilPlan((text) => text.includes('- [x] word sometime ✅'), 'the library following')
+
+  // The board: a select from the keyboard, and a drag.
+  await panel.getByRole('combobox', {name: 'Layout'}).selectOption('board')
+  const lane = (name) => panel.getByRole('region', {name, exact: true})
+  await lane('Todo').waitFor()
+  await panel.getByRole('combobox', {name: 'Status of later'}).selectOption('/')
+  await lane('In progress').getByRole('button', {name: 'later'}).waitFor()
+  assert.match(await planText(), /- \[\/\] later/)
+  await lane('Todo').locator('.database-card', {hasText: 'second task'}).dragTo(lane('Cancelled'))
+  await lane('Cancelled').getByRole('button', {name: 'second task'}).waitFor()
+
+  // The timeline: a bar for what has a date, moved by Alt and an arrow.
+  await panel.getByRole('combobox', {name: 'Layout'}).selectOption('timeline')
+  const bar = panel.locator('.timeline-bar', {hasText: 'later'})
+  await bar.waitFor()
+  await bar.focus()
+  await page.keyboard.press('Alt+ArrowLeft')
+  await untilPlan((text) => !text.includes(`later 📅 ${days.week}`), 'the bar moved')
+  await panel.getByRole('combobox', {name: 'Layout'}).selectOption('list')
+
+  // Reminders, through a stand-in for the browser's notifications.
+  await page.evaluate(() => {
+    globalThis.shown = []
+    globalThis.Notification = class {
+      static permission = 'granted'
+      static requestPermission = async () => 'granted'
+      constructor(title) {
+        globalThis.shown.push(title)
+      }
+    }
+  })
+  await box.fill('ring now')
+  await page.keyboard.press('Enter')
+  await row('ring now').waitFor()
+  await page.evaluate(async (days) => {
+    const library = await import('/lib/library.js')
+    await library.putDocument({id: 'bell', title: 'Bell', text: `# Bell\n\n- [ ] ring the bell ⏰ ${days.today} 00:00\n`})
+    const view = await import('/lib/tasks-view.js')
+    localStorage.setItem('textarea:reminders', 'on')
+    await view.checkReminders()
+    await view.checkReminders()
+  }, days)
+  assert.deepEqual(await page.evaluate(() => globalThis.shown), ['ring the bell'], 'once')
+
+  // A tick in the note makes the next one too, and one undo takes it back.
+  await page.locator('#sidebar .sidebar-new').click()
+  await until(() => globalThis.textarea.article.textContent === '', {what: 'a new note'})
+  assert.equal(await panel.isVisible(), false, 'a new note closes the screen')
+  const repeat = `- [ ] again 🔁 every day 📅 ${days.today}`
+  await page.evaluate((repeat) => globalThis.textarea.editor.replace(repeat), repeat)
+  await page.locator('article').first().locator('.md-task').first().click({position: {x: 1, y: 1}, force: true})
+  await until(() => globalThis.textarea.article.textContent.includes('- [x] again'), {what: 'the tick'})
+  const ticked = await page.evaluate(() => globalThis.textarea.article.textContent)
+  assert.equal(ticked, `- [ ] again 🔁 every day 📅 ${days.tomorrow}\n- [x] again 🔁 every day 📅 ${days.today} ✅ ${days.today}`)
+})
+
+test('notes: trees, folders, the slash menu, cards, images and the graph', async () => {
+  await reset()
+  await page.evaluate(async () => {
+    localStorage.removeItem('textarea:sidebar-view')
+    const library = await import('/lib/library.js')
+    for (const text of [
+      '# Alpha\n\nsee [[Beta]]\n#work/taxes',
+      '# Beta\n\nthe second note\n#work',
+      '# Filed\n\nbody\n\nfolder:: Work/Plans\n',
+    ]) {
+      await library.putDocument({text, title: text.split('\n')[0].slice(2)})
+    }
+    await globalThis.textarea.save()
+  })
+  const sidebar = page.locator('#sidebar')
+  const listed = () => sidebar.locator('.sidebar-note').allTextContents()
+  await until(() => document.querySelector('[data-view="tag:work/taxes"]'), {what: 'the nested tag row'})
+  await sidebar.locator('[data-view="tag:work"]').click()
+  assert.deepEqual((await listed()).sort(), ['Alpha', 'Beta'], 'a tag lists what is nested under it')
+  await sidebar.locator('[data-view="folder:Work"]').click()
+  assert.deepEqual(await listed(), ['Filed'], 'a folder lists what is nested under it')
+  await sidebar.getByRole('button', {name: 'Fold Work', exact: true}).click()
+  assert.equal(await sidebar.locator('[data-view="folder:Work/Plans"]').count(), 0, 'a branch folds')
+
+  // Moving a note writes one line of its text, and the file stays a plain note.
+  await sidebar.locator('[data-view="notes"]').click()
+  await sidebar.getByRole('button', {name: 'Beta'}).click()
+  await until(() => globalThis.textarea.article.textContent.startsWith('# Beta'), {what: 'Beta'})
+  await page.keyboard.press('ControlOrMeta+k')
+  const switcher = page.locator('dialog.dialog-switcher')
+  await switcher.locator('input').fill('Move to folder')
+  await page.keyboard.press('Enter')
+  const move = page.locator('dialog.dialog[aria-label="Move to folder"]')
+  await move.locator('input').fill('Home / Ideas')
+  await move.locator('.dialog-button-primary').click()
+  await until(() => globalThis.textarea.article.textContent.endsWith('folder:: Home/Ideas\n'), {what: 'the folder line'})
+  await until(() => document.querySelector('[data-view="folder:Home/Ideas"]'), {what: 'the new folder row'})
+
+  // A slash at the start of a line opens the menu; Escape leaves it as typed.
+  await reset()
+  await page.locator('article').click()
+  await page.keyboard.type('/')
+  const menu = page.locator('#slash-menu')
+  await menu.waitFor({state: 'visible'})
+  await page.keyboard.press('Escape')
+  await menu.waitFor({state: 'hidden'})
+  assert.equal(await noteText(), '/', 'Escape leaves the slash as typed')
+  await page.keyboard.press('Backspace')
+  await page.keyboard.type('/tab')
+  await until(() => document.querySelector('#slash-menu li')?.textContent === 'Table', {what: 'the filtered row'})
+  await page.keyboard.press('Enter')
+  assert.equal(await noteText(), '| Column | Column |\n|---|---|\n|  |  |')
+  await setNote('')
+  await page.keyboard.type('/to-do')
+  await page.keyboard.press('Enter')
+  await page.keyboard.type('water')
+  assert.equal(await noteText(), '- [ ] water', 'the caret lands where the snippet says')
+  // A division or a path never opens it.
+  await setNote('')
+  await page.keyboard.type('1/2')
+  assert.equal(await menu.isVisible(), false)
+
+  // A card and a picture draw from the tree and leave the note's text alone.
+  await reset()
+  await page.evaluate(async () => {
+    const library = await import('/lib/library.js')
+    await library.putDocument({text: '# Target\n\nthe preview line', title: 'Target'})
+  })
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+  const token = await page.evaluate(async (data) => {
+    const {addAttachment} = await import('/lib/attachments.js')
+    const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+    return addAttachment(new File([bytes], 'dot.png', {type: 'image/png'}))
+  }, png)
+  assert.equal(token, '![dot.png](attachments/dot.png)')
+  const text = `# Host\n\n[[Target]]\n${token}\ninline [[Target]] stays\n`
+  await setNote(text)
+  await saveNow()
+  await until(() => document.querySelector('.md-card')?.dataset.preview === 'the preview line', {what: 'the card preview'})
+  await until(() => document.querySelector('.md-image')?.style.getPropertyValue('--image').includes('data:image/png'), {
+    what: 'the picture',
+  })
+  assert.equal(await noteText(), text, 'cards and pictures add nothing to the text')
+  assert.equal(await page.locator('.md-wiki').count(), 2)
+  assert.equal(await page.locator('.md-card').count(), 1, 'only the link alone on its line is a card')
+  // Typing right after each keeps the caret and the text, and rubbing it out
+  // draws the block again.
+  await page.locator('article').focus()
+  for (const [selector, end] of [
+    ['.md-card', text.indexOf('\n', text.indexOf('[[Target]]'))],
+    ['.md-image', text.indexOf('\n', text.indexOf(token))],
+  ]) {
+    await placeCaret(end)
+    await page.keyboard.type('x')
+    await untilCaret(end + 1, `the caret after ${selector}`)
+    assert.equal(await noteText(), `${text.slice(0, end)}x${text.slice(end)}`)
+    await page.locator(selector).waitFor({state: 'detached', timeout: 5000})
+    await page.keyboard.press('Backspace')
+    await untilCaret(end, `the caret back beside ${selector}`)
+    assert.equal(await noteText(), text)
+    await page.locator(selector).waitFor({state: 'attached', timeout: 5000})
+  }
+
+  // A click on the card opens its note.
+  await setNote(text)
+  await saveNow()
+  await page.locator('.md-card').click()
+  await until(() => globalThis.textarea.article.textContent.startsWith('# Target'), {what: 'the card to open'})
+
+  // The graph draws the link, and a dot opens its note.
+  await sidebar.locator('.sidebar-graph').click()
+  const graph = page.locator('dialog.dialog-graph')
+  await graph.waitFor({state: 'visible'})
+  assert.equal(await graph.locator('line').count(), 1)
+  await graph.getByRole('button', {name: /^Open Host/}).click()
+  await graph.waitFor({state: 'detached'})
+  await until(() => globalThis.textarea.article.textContent.startsWith('# Host'), {what: 'the dot to open'})
+  await page.evaluate(() => localStorage.removeItem('textarea:sidebar-view'))
+})
+
+test('a picture arrives by paste, by drop and through the slash menu', async () => {
+  await reset()
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+  const arrive = (kind, name) =>
+    page.evaluate(
+      ({kind, name, data}) => {
+        const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+        const transfer = new DataTransfer()
+        transfer.items.add(new File([bytes], name, {type: 'image/png'}))
+        if (kind === 'paste') {
+          // A plain event: Firefox's ClipboardEvent constructor drops clipboardData.
+          const event = new Event('paste', {bubbles: true, cancelable: true})
+          Object.defineProperty(event, 'clipboardData', {value: transfer})
+          document.querySelector('article').dispatchEvent(event)
+        } else {
+          window.dispatchEvent(new DragEvent('drop', {dataTransfer: transfer, bubbles: true, cancelable: true}))
+        }
+      },
+      {kind, name, data: png},
+    )
+  // The slash menu's row first, on an empty line where a slash opens it.
+  const chooser = page.waitForEvent('filechooser')
+  await page.locator('article').focus()
+  await page.keyboard.type('/image')
+  await page.keyboard.press('Enter')
+  await (await chooser).setFiles({name: 'chosen-three.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4')})
+  await until(() => globalThis.textarea.article.textContent.includes('[chosen-three.pdf](attachments/chosen-three.pdf)'), {
+    what: 'the chosen file',
+  })
+  assert.ok(!(await noteText()).includes('/image'), 'the slash and its query are gone')
+  await arrive('paste', 'pasted-one.png')
+  await until(() => globalThis.textarea.article.textContent.includes('(attachments/pasted-one.png)'), {what: 'the paste'})
+  await arrive('drop', 'dropped-two.png')
+  await until(() => globalThis.textarea.article.textContent.includes('(attachments/dropped-two.png)'), {what: 'the drop'})
+  assert.ok((await noteText()).includes('(attachments/pasted-one.png)'), 'a dropped picture does not replace the note')
+  await until(() => document.querySelectorAll('.md-image').length === 2 && document.querySelector('.md-attachment'), {
+    what: 'two pictures and a file link',
+  })
+  await until(() => [...document.querySelectorAll('.md-image')].every((el) => el.style.getPropertyValue('--image')), {
+    what: 'both pictures to draw',
+  })
+  const download = page.waitForEvent('download')
+  await page.locator('.md-attachment').click()
+  assert.equal((await download).suggestedFilename(), 'chosen-three.pdf')
+})
+
 test('nothing logged an error along the way', () => {
   const noise = consoleErrors.filter(
     (message) =>
@@ -6534,4 +8008,71 @@ test('nothing logged an error along the way', () => {
       !(ENGINE_NAME === 'firefox' && /^\[JavaScript Error: "AbortError: The operation was aborted\. "\]$/.test(message)),
   )
   assert.deepEqual(noise, [], 'the console should be clean')
+})
+
+test('organise by voice hands the transcript over, and the board draws, ticks and keeps focus', async () => {
+  // The seam again: no model, only what the panel and the board do with it.
+  await page.evaluate(async () => {
+    const {createSpeechPanel} = await import('/lib/speech-panel.js')
+    const {createBoard} = await import('/lib/board-panel.js')
+    const state = {organised: null, changed: null}
+    const panel = createSpeechPanel({
+      decode: async () => new Float32Array(16_000),
+      ensureModel: async () => ({transcribe: async () => 'Fence is done, soil still to buy.'}),
+      gpu: async () => false,
+      onInsert: () => {},
+      canOrganise: () => true,
+      onOrganise: (text, {allNotes, say}) => {
+        state.organised = {text, allNotes}
+        say('Organised into a board.')
+      },
+    })
+    panel.element.id = 'organise-probe'
+    panel.element.style.cssText = 'position: fixed; top: 16px; left: 16px; z-index: 5; background: #fff'
+    const board = createBoard({
+      onChange: (text) => {
+        state.changed = text
+      },
+    })
+    board.element.id = 'board-probe'
+    board.element.style.cssText = 'position: fixed; top: 16px; right: 16px; z-index: 5; background: #fff'
+    globalThis.__organise = state
+    globalThis.__board = board
+    document.body.append(panel.element, board.element)
+    panel.open()
+  })
+  const probe = page.locator('#organise-probe')
+  const board = page.locator('#board-probe')
+  try {
+    await probe.locator('.speech-input').setInputFiles({name: 'memo.wav', mimeType: 'audio/wav', buffer: Buffer.from('sixteen bytes ok')})
+    const organise = probe.getByRole('button', {name: 'Organise into a board'})
+    await organise.waitFor({state: 'visible'})
+    await probe.getByLabel(/Sort all my notes too/).uncheck()
+    await organise.click()
+    assert.deepEqual(await page.evaluate(() => globalThis.__organise.organised), {
+      text: 'Fence is done, soil still to buy.',
+      allNotes: false,
+    })
+    assert.equal(await probe.locator('.writing-status').textContent(), 'Organised into a board.')
+
+    const md = '# Organised today\n\n## Garden\n- [x] Fence posts\n- [ ] Buy soil\n- ? Which hedge'
+    assert.equal(await page.evaluate((md) => globalThis.__board.update(md) && (globalThis.__board.open(), true), md), true)
+    assert.equal(await board.locator('.board-title').textContent(), 'Organised today')
+    assert.equal(await board.locator('.board-card').count(), 1)
+    assert.equal(await board.locator('.board-count').textContent(), '1 of 2 done')
+    assert.equal(await board.getByRole('progressbar', {name: 'Garden: 1 of 2 done'}).count(), 1)
+    await board.getByLabel('Buy soil').check()
+    assert.match(await page.evaluate(() => globalThis.__organise.changed), /- \[x\] Buy soil/)
+
+    // The save that follows redraws the board; the keyboard stays on the box.
+    await board.getByLabel('Buy soil').focus()
+    await page.evaluate(() => globalThis.__board.update(globalThis.__organise.changed))
+    assert.equal(await page.evaluate(() => document.activeElement?.closest('label')?.textContent), 'Buy soil')
+    assert.equal(await page.evaluate(() => globalThis.__board.update('just prose')), false, 'prose is not a board')
+  } finally {
+    await page.evaluate(() => {
+      document.querySelector('#organise-probe')?.remove()
+      document.querySelector('#board-probe')?.remove()
+    })
+  }
 })

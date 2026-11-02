@@ -11,6 +11,10 @@
 *.png binary
 *.ico binary
 *.webp binary
+# Model chunks are pinned by SHA-256 and the speech fixture is audio: a chunk
+# that happens to hold no NUL byte near its start must not be taken for text.
+*.part[0-9]* binary
+*.wav binary
 vendor/**/*.mjs text eol=lf
 vendor/**/*.js text eol=lf
 

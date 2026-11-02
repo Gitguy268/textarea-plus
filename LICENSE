@@ -26,3 +26,16 @@ SOFTWARE.
 This project is a fork of antonmedv/textarea, which is also MIT licensed. See
 README.md for what this fork adds, changes and leaves out, and vendor/README.md
 for the third-party code checked in under vendor/.
+
+The MIT licence above covers the code in this repository. It does not cover:
+
+- vendor/, where each library keeps its own licence file (see vendor/README.md);
+- models/, which holds Gemma model weights from Google. Those are provided
+  under and subject to the Gemma Terms of Use (models/GEMMA_TERMS.md) and the
+  Gemma Prohibited Use Policy (models/GEMMA_PROHIBITED_USE_POLICY.md), not MIT.
+  models/whisper-small-2d67713f/ holds Whisper model weights from OpenAI, in
+  Xenova's ONNX conversion, under the Apache License 2.0
+  (models/whisper-small-2d67713f/LICENSE), not MIT.
+  models/whisper-large-v3-turbo-efd60f61/ holds OpenAI's Whisper large v3
+  turbo weights, in striimit's ONNX conversion for WebGPU, under OpenAI's MIT
+  licence (models/whisper-large-v3-turbo-efd60f61/LICENSE).

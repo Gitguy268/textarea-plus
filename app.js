@@ -7,6 +7,7 @@ import {
   applyBacklinksPreference,
   applyStatsPreference,
   applyWritingPreference,
+  expandTaskShortcut,
   openWikiLink,
   statsPanel,
   toggleTask,
@@ -40,6 +41,7 @@ import {
 import {notify} from './lib/notify.js'
 import {readNote} from './lib/read-note.js'
 import {initShortcuts} from './lib/shortcuts.js'
+import {initShell} from './lib/shell.js'
 
 /**
  * A custom font chosen in Settings, fetched and applied after the first
@@ -82,6 +84,7 @@ function init() {
   void applyBacklinksPreference()
   void applyWritingPreference()
   updateMenuState()
+  initShell()
 
   // Background sync has no menu to speak from, so problems land in the same
   // bubble everything else uses, and a folder remembered from the last session
@@ -95,7 +98,8 @@ function init() {
   // The title follows the first keystroke; the URL and the library are
   // rewritten on a pause - and at once when the tab is hidden or closed, so
   // the pause can never cost the last words typed.
-  article.addEventListener('input', () => {
+  article.addEventListener('input', (event) => {
+    expandTaskShortcut(event)
     updateTitle()
     scheduleSave()
   })
@@ -112,6 +116,13 @@ function init() {
       return
     }
     if (event.target.tagName !== 'A') return
+    // A file kept with the note: handed over as a download on the click.
+    if (event.target.classList.contains('md-attachment')) {
+      void import('./lib/attachments.js').then(({downloadAttachment}) =>
+        downloadAttachment(event.target.dataset.attachment),
+      )
+      return
+    }
     // A wikilink resolves against this browser's library: its title is on
     // the element, and whether nothing is made on a miss is the reader's
     // choice under the switch.

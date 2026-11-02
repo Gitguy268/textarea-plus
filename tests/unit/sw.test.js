@@ -71,6 +71,8 @@ test('an install survives the shell files that are missing', async () => {
   // with it, or the worker never reaches a state it can serve from.
   await fire('install')
   assert.ok(added.includes('/app.js'), 'the rest of the shell was still asked for')
+  assert.ok(added.includes('/vendor/qr/qrcode.mjs'), 'the QR encoder is precached for offline pairing')
+  assert.ok(added.includes('/vendor/jsqr/jsQR.js'), 'and so is the scanner')
   assert.equal(skipped, true, 'the install completed into a skipWaiting')
 })
 

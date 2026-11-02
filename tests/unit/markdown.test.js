@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {test} from 'node:test'
 
-import {fileLink, renderMarkdown, tasksIn} from '../../lib/markdown.js'
+import {fileLink, renderMarkdown, tagsIn, tasksIn} from '../../lib/markdown.js'
 
 /** Concatenate the source text a tree carries, which must be the input back. */
 function sourceOf(nodes) {
@@ -187,8 +187,13 @@ test('file links render only while the feature is on', () => {
 test('wikilinks render only while the feature is on', () => {
   const token = '[[Quarterly review]]'
 
-  assert.deepEqual(renderMarkdown(token, {wikilinks: true}), [
+  assert.deepEqual(renderMarkdown(`see ${token}`, {wikilinks: true}), [
+    {t: 'text', v: 'see '},
     {t: 'link', wiki: 'Quarterly review', v: token},
+  ])
+  // textarea-plus: alone on its line, the same link is a card.
+  assert.deepEqual(renderMarkdown(token, {wikilinks: true}), [
+    {t: 'link', wiki: 'Quarterly review', v: token, card: true, preview: ''},
   ])
 
   // The brackets are the reader's own text first: with the switch off they
@@ -209,7 +214,7 @@ test('wikilinks render only while the feature is on', () => {
   // does not drag emphasis into it, and the text still round-trips.
   const underscored = '[[a_b c]]'
   assert.deepEqual(renderMarkdown(underscored, {wikilinks: true}), [
-    {t: 'link', wiki: 'a_b c', v: underscored},
+    {t: 'link', wiki: 'a_b c', v: underscored, card: true, preview: ''},
   ])
   assert.equal(sourceOf(renderMarkdown(underscored, {wikilinks: true})), underscored)
 })
@@ -260,17 +265,17 @@ test('fileLink builds the token the renderer reads back', () => {
 
 
 test('bullets become list items and keep their marker', () => {
-  const nodes = renderMarkdown('* one\n- two\n+ three')
+  const nodes = renderMarkdown('* one\n+ three')
   const list = items(nodes)
 
-  assert.equal(list.length, 3)
+  assert.equal(list.length, 2)
   assert.deepEqual(
     list.map((node) => node.level),
-    [1, 1, 1],
+    [1, 1],
   )
   assert.deepEqual(
     list.map((node) => node.children[0].v),
-    ['* ', '- ', '+ '],
+    ['* ', '+ '],
   )
   assert.ok(list.every((node) => !node.ordered))
   // The marker is hidden by CSS, so it is wrapped separately from the body.
@@ -335,6 +340,14 @@ test('a marker needs a space after it to count', () => {
   assert.equal(items(renderMarkdown('2 * 3 is maths')).length, 0)
 })
 
+test('a dash is only a dash unless a task follows it', () => {
+  const plain = renderMarkdown('- two\n  - nested', {tasks: true})
+  assert.equal(items(plain).length, 0, 'no bullet is drawn for a dash')
+  assert.equal(sourceOf(plain), '- two\n  - nested')
+  assert.equal(items(renderMarkdown('- [ ] water', {tasks: true})).length, 1, 'a task still is an item')
+  assert.equal(items(renderMarkdown('* still a bullet', {tasks: true})).length, 1)
+})
+
 test('a bullet in the middle of a line is left alone', () => {
   const nodes = renderMarkdown('remember to buy * milk')
   assert.equal(items(nodes).length, 0)
@@ -365,12 +378,12 @@ test('[x] and [X] are the ticked state, however it was typed', () => {
 })
 
 test('the bracket is only a bracket until the switch is thrown', () => {
-  // Off - the default - the line is the list it always was: the marker
-  // rule unchanged, no checkbox anywhere, and the text untouched.
-  const nodes = renderMarkdown('- [ ] water')
+  // Off - the default - a dash line is plain text and a starred one the
+  // list it always was: no checkbox anywhere, and the text untouched.
+  const nodes = renderMarkdown('- [ ] water\n* [ ] wine')
   assert.ok(!classes(nodes).some((c) => c.includes('md-task')))
-  assert.ok(classes(nodes).includes('md-marker'))
-  assert.equal(sourceOf(nodes), '- [ ] water')
+  assert.equal(items(nodes).length, 1)
+  assert.equal(sourceOf(nodes), '- [ ] water\n* [ ] wine')
 })
 
 test('only a bracket straight after the marker counts as a task', () => {
@@ -418,4 +431,38 @@ test('tasksIn reads the tree the note is drawn from', () => {
     {done: false, text: 'ordered'},
   ])
   assert.deepEqual(tasksIn('- [ ]'), [{done: false, text: ''}], 'a task with no words still counts')
+})
+
+test('a tag is a # after a space with a letter behind it, and nothing else is', () => {
+  const tags = (text) =>
+    renderMarkdown(text, {tags: true})
+      .flatMap((node) => (node.t === 'item' ? node.children : [node]))
+      .filter((node) => node.c === 'md-tag')
+      .map((node) => node.v)
+
+  assert.deepEqual(tags('#home at the start, #work/taxes inside, and #ünï_1-x.'), ['#home', '#work/taxes', '#ünï_1-x'])
+  assert.deepEqual(tags('* #listed in an item'), ['#listed'])
+  // A heading is a heading, to its last character.
+  assert.deepEqual(tags('# Title #not\n## Sub'), [])
+  assert.deepEqual(tags('item #1, C#, a#b, &#39; and https://example.com/#top'), [])
+  assert.deepEqual(tags('`#code` and\n```\n#include <stdio.h>\n```'), [])
+})
+
+test('a tag is only text until the switch is thrown, and the note comes back either way', () => {
+  const note = '# Title\n\n#home and #work/taxes\n* #listed\n`#code`'
+  assert.ok(!classes(renderMarkdown(note)).includes('md-tag'))
+  assert.ok(classes(renderMarkdown(note, {tags: true})).includes('md-tag'))
+  assert.equal(sourceOf(renderMarkdown(note)), note)
+  assert.equal(sourceOf(renderMarkdown(note, {tags: true})), note)
+})
+
+test('tagsIn reads the tree the note is drawn from', () => {
+  assert.deepEqual(tagsIn('# T #no\n#Home, #home and #work/Taxes\n- [ ] #todo\n`#code` item #1'), [
+    'home',
+    'home',
+    'work/taxes',
+    'todo',
+  ])
+  assert.deepEqual(tagsIn('nothing to find'), [])
+  assert.deepEqual(tagsIn(undefined), [])
 })

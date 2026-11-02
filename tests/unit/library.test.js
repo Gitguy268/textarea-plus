@@ -14,6 +14,7 @@ import {
   putDocument,
   purgeTrash,
   restoreFromTrash,
+  setDocumentFlags,
 } from '../../lib/library.js'
 
 // The library's own rule, stated at the top of the file: every function
@@ -29,6 +30,7 @@ test('every library and trash call degrades to a no-op without storage', async (
   assert.equal(await getDocument('note-1'), null)
   assert.equal(await putDocument({text: 'hello'}), null)
   assert.equal(await deleteDocument('note-1'), false)
+  assert.equal(await setDocumentFlags('note-1', {pinned: true}), null)
 
   assert.deepEqual(await listTrash(), [])
   assert.equal(await moveToTrash('note-1'), false)
@@ -53,4 +55,19 @@ test('the documents panel orders notes three ways without touching the list it w
   // Case does not sort capitals first, and 9 comes before 10.
   assert.deepEqual(titles(sortNotes(stored, 'title')), ['Apple', 'banana', 'cherry 9', 'cherry 10'])
   assert.deepEqual(titles(stored), ['banana', 'Apple', 'cherry 10', 'cherry 9'])
+})
+
+test('pinned notes come first, each half in the order that was asked for', async () => {
+  const {sortNotes} = await import('../../lib/library-panel.js')
+  const stored = [
+    {title: 'banana', created: 3},
+    {title: 'Apple', created: 1, pinned: true},
+    {title: 'cherry', created: 2},
+    {title: 'date', created: 0, pinned: true},
+  ]
+  const titles = (entries) => entries.map((entry) => entry.title)
+  assert.deepEqual(titles(sortNotes(stored, 'updated')), ['Apple', 'date', 'banana', 'cherry'])
+  assert.deepEqual(titles(sortNotes(stored, 'created')), ['Apple', 'date', 'banana', 'cherry'])
+  assert.deepEqual(titles(sortNotes(stored, 'title')), ['Apple', 'date', 'banana', 'cherry'])
+  assert.deepEqual(titles(stored), ['banana', 'Apple', 'cherry', 'date'], 'the list it was given is untouched')
 })

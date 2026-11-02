@@ -12,7 +12,7 @@ import {createHash} from 'node:crypto'
 import {open, readFile} from 'node:fs/promises'
 import {test} from 'node:test'
 
-import {fetchMessage, fetchPlan, loadEngine, verifyChunk} from '../../lib/gemma.js'
+import {fetchMessage, fetchPlan, loadEngine, manifestFiles, MODELS, verifyChunk} from '../../lib/gemma.js'
 
 const manifestUrl = new URL('../../models/manifest.json', import.meta.url)
 
@@ -306,4 +306,56 @@ test('a cancelled download rejects as an abort, and the next load starts over', 
   } finally {
     globalThis.fetch = original
   }
+})
+
+test('every model directory ships a manifest whose files all plan, first chunk on disk checked', async () => {
+  for (const [id, {dir}] of Object.entries(MODELS)) {
+    const root = new URL(`../..${dir}`, import.meta.url)
+    const manifest = JSON.parse(await readFile(new URL('manifest.json', root), 'utf8'))
+    const files = manifestFiles(manifest)
+    for (const file of files) {
+      const [first] = fetchPlan(file)
+      const handle = await open(new URL(first.path, root), 'r')
+      try {
+        const bytes = Buffer.alloc(first.size)
+        await handle.read(bytes, 0, first.size, 0)
+        assert.equal(createHash('sha256').update(bytes).digest('hex'), first.sha256, `${id}: ${first.path}`)
+        // Every file a manifest names is a GGUF: the magic is the first four bytes.
+        assert.equal(bytes.subarray(0, 4).toString('latin1'), 'GGUF', `${id}: ${first.path} starts a GGUF`)
+      } finally {
+        await handle.close()
+      }
+    }
+  }
+  assert.equal(manifestFiles({files: {a: 1, b: 2}}).length, 2, 'files come in the order written')
+  assert.throws(() => manifestFiles({files: {}}), /lists no files/)
+})
+
+test('a model this app does not have is refused before anything is fetched', async () => {
+  await withFetch({}, async () => {
+    await assert.rejects(loadEngine({model: 'gpt-9'}), /gpt-9 is not a writing model this app has/)
+  })
+})
+
+test('a multi-file model is fetched from its own directory, every file checked', async () => {
+  const log = []
+  const manifest = {
+    files: {
+      'a.gguf': {totalSize: 5, chunks: [{path: 'a.part1', size: 5, sha256: sha256Hex('hello')}]},
+      'b.gguf': {totalSize: 5, chunks: [{path: 'b.part1', size: 5, sha256: sha256Hex('world')}]},
+    },
+  }
+  const dir = MODELS['minicpm-v'].dir
+  await withFetch(
+    {
+      [dir + 'manifest.json']: {body: JSON.stringify(manifest)},
+      [dir + 'a.part1']: {body: 'hello'},
+      [dir + 'b.part1']: {body: 'world'},
+    },
+    async () => {
+      // As for Gemma, the rejection is the wasm import Node cannot resolve.
+      await assert.rejects(loadEngine({model: 'minicpm-v', onProgress: (message) => log.push(message)}))
+    },
+  )
+  assert.equal(log.at(-1), 'Preparing the model…', 'both files checked out before the engine was reached for')
 })
