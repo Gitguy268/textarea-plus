@@ -2,7 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: Security problem
     url: https://github.com/gitguy268/textarea/blob/main/SECURITY.md
-    about: Email l.a.vandeweerd@gmail.com instead of opening a public issue. Please read SECURITY.md first.
+    about: Email https://github.com/Gitguy268/textarea-plus/security/advisories/new instead of opening a public issue. Please read SECURITY.md first.
   - name: Contributing
     url: https://github.com/gitguy268/textarea/blob/main/CONTRIBUTING.md
     about: How to run the tests, the two hard rules, and what a good pull request looks like here.

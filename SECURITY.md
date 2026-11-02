@@ -6,7 +6,7 @@
 problem.** Open an issue for ordinary bugs; a public issue is the wrong place for
 a flaw that someone else can use first.
 
-Email **l.a.vandeweerd@gmail.com** with:
+Email **[private vulnerability reporting](https://github.com/Gitguy268/textarea-plus/security/advisories/new)** with:
 
 - what the problem is, in one or two sentences
 - the version, which for this project is the commit SHA or the `sw.js` cache

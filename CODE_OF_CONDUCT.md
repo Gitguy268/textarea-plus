@@ -61,7 +61,7 @@ representative at an online or offline event.
 
 Instances of abusive, harassing, or otherwise unacceptable behaviour may be
 reported to the community leaders responsible for enforcement at
-**l.a.vandeweerd@gmail.com**.
+**[private vulnerability reporting](https://github.com/Gitguy268/textarea-plus/security/advisories/new)**.
 
 All complaints will be reviewed and investigated promptly and fairly.
 
