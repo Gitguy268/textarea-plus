@@ -10,7 +10,7 @@
 // from the cache before it asks the network, so a returning tab keeps the
 // index.html it installed until the name of the cache changes underneath it.
 
-const VERSION = 'v38'
+const VERSION = 'v39'
 const SHELL_CACHE = `textarea-shell-${VERSION}`
 const VENDOR_CACHE = `textarea-vendor-${VERSION}`
 // Deliberately not derived from VERSION: the model is 241 MB, and a cache
