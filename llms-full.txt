@@ -16,7 +16,7 @@
 
 **A _minimalist_ text editor that lives entirely in your browser.**
 
-[Open the editor](https://gitguy268-textarea.vercel.app/) · [Features](#features) · [Using it](#using-it) · [Keyboard](#keyboard) · [Development](#development) · [Differences from upstream](#differences-from-upstream)
+[Open the editor](https://gitguy268.github.io/textarea-plus/) · [Features](#features) · [Using it](#using-it) · [Keyboard](#keyboard) · [Development](#development) · [Differences from upstream](#differences-from-upstream)
 
 ![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue)
 [![Fork of antonmedv/textarea](https://img.shields.io/badge/fork%20of-antonmedv%2Ftextarea-8250df)](https://github.com/antonmedv/textarea)
@@ -42,6 +42,41 @@ This repository is a rebuild of that fork (`textarea-master`): every feature
 it had, with the same storage and link formats, plus the changes listed under
 "Improvements over textarea-master" in [CHANGELOG.md](CHANGELOG.md).
 [docs/PARITY.md](docs/PARITY.md) names the test that guards each feature.
+
+<!-- live-links -->
+**Live:** [gitguy268.github.io/textarea-plus](https://gitguy268.github.io/textarea-plus/)
+<!-- /live-links -->
+
+<!-- run-steps:start -->
+## Run it locally, step by step
+
+1. **Install [Node.js](https://nodejs.org) 22** or newer.
+
+2. **Get the code:**
+
+   ```sh
+   git clone https://github.com/Gitguy268/textarea-plus.git
+   cd textarea-plus
+   ```
+
+3. **Install the dev tools:**
+
+   ```sh
+   npm ci
+   ```
+
+4. **Start it:**
+
+   ```sh
+   PORT=2502 npm run serve
+   ```
+
+   On a Mac you can double-click `start.command` instead.
+
+5. **Open <http://127.0.0.1:2502/>** in your browser. Press `Ctrl+C` to stop.
+
+> The Whisper and MiniCPM model files (about 4.7 GB) are not in this repository, so speech to text and those AI models stay unavailable until you add them under `models/`. The editor works without them.
+<!-- run-steps:end -->
 
 ## Features
 
@@ -489,7 +524,7 @@ machine. That also means both devices must be on the same network: guest Wi-Fi
 and networks that keep devices apart will time out with a message saying so.
 Each code is the connection offer (or answer), compressed like a note link. A
 code made on `localhost` points the other device at
-[gitguy268-textarea.vercel.app](https://gitguy268-textarea.vercel.app/),
+[gitguy268-textarea-plus.vercel.app](https://gitguy268-textarea-plus.vercel.app/),
 because a phone can't open this computer's `localhost`. The camera is used only
 while a scan is running. Where the browser has no `BarcodeDetector` (Firefox,
 Safari, Chromium on Windows and Linux) the vendored jsQR decoder reads the
@@ -751,7 +786,7 @@ chromium`; add `firefox webkit` for `test:browsers`). Chromium is the gate;
 under the other two engines the tests of Chromium-only features — folder
 sync, the file pickers, the clipboard permission — are skipped by name. Deploys come from pushes to `main`: [Vercel](https://vercel.com/) is
 connected to this repository through its Git integration, and it publishes the
-static files at [gitguy268-textarea.vercel.app](https://gitguy268-textarea.vercel.app/)
+static files at [gitguy268-textarea-plus.vercel.app](https://gitguy268-textarea-plus.vercel.app/)
 over HTTPS — there is no build step, and no deploy runs in GitHub Actions.
 GitHub Actions runs the lint, the unit and browser suites, and a link check on
 every pull request.

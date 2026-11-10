@@ -75,6 +75,6 @@ What usually needs answering:
 ## Optional
 
 - [Full documentation](https://raw.githubusercontent.com/gitguy268/textarea/main/llms-full.txt): the README, the changelog and the contributing guide in one file
-- [The app](https://gitguy268-textarea.vercel.app/): the deployed editor
+- [The app](https://gitguy268-textarea-plus.vercel.app/): the deployed editor
 - [Source](https://github.com/gitguy268/textarea): repository, issues and pull requests
 - [Licence](https://raw.githubusercontent.com/gitguy268/textarea/main/LICENSE): MIT, based on MIT © Anton Medvedev

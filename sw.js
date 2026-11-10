@@ -10,7 +10,7 @@
 // from the cache before it asks the network, so a returning tab keeps the
 // index.html it installed until the name of the cache changes underneath it.
 
-const VERSION = 'v39'
+const VERSION = 'v40'
 const SHELL_CACHE = `textarea-shell-${VERSION}`
 const VENDOR_CACHE = `textarea-vendor-${VERSION}`
 // Deliberately not derived from VERSION: the model is 241 MB, and a cache
@@ -19,6 +19,11 @@ const VENDOR_CACHE = `textarea-vendor-${VERSION}`
 // models/manifest.json, and a new model ships under new names - so a
 // cache-first answer here is never stale, and never worth re-paying for.
 const MODELS_CACHE = 'textarea-models'
+
+// The folder this worker serves: '/' locally, '/textarea/' on GitHub Pages.
+// Every path below is written from the root and moved under it here.
+const BASE = new URL('./', location.href).pathname
+const at = (path) => BASE + path.slice(1)
 
 const SHELL = [
   '/',
@@ -98,12 +103,12 @@ const SHELL = [
   '/lib/whisper.js',
   '/lib/writing-tools.js',
   '/lib/zip.js',
-]
+].map(at)
 
 // Precached into VENDOR_CACHE, which the fetch handler reads first for /vendor/.
-const VENDOR = ['/vendor/qr/qrcode.mjs', '/vendor/qr/qrcode_UTF8.mjs', '/vendor/jsqr/jsQR.js']
+const VENDOR = ['/vendor/qr/qrcode.mjs', '/vendor/qr/qrcode_UTF8.mjs', '/vendor/jsqr/jsQR.js'].map(at)
 
-const isVendored = (url) => url.pathname.startsWith('/vendor/')
+const isVendored = (url) => url.pathname.startsWith(at('/vendor/'))
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -150,7 +155,7 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  if (url.pathname.startsWith('/models/')) {
+  if (url.pathname.startsWith(at('/models/'))) {
     // Cache first, into a cache that survives releases: the first Load
     // model pays the 241 MB once, and every run after it - including the
     // offline ones - reads the committed bytes back from here. Nothing in
@@ -183,7 +188,7 @@ self.addEventListener('fetch', (event) => {
         })
         .catch(() => {
           // Offline and not cached: the navigation fallback is the shell.
-          if (request.mode === 'navigate') return caches.match('/index.html')
+          if (request.mode === 'navigate') return caches.match(at('/index.html'))
           return Response.error()
         })
     }),

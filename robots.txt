@@ -1,0 +1,7 @@
+# Nothing is disallowed: the app is one public page with no private corners.
+# The sitemap is listed because that is how a crawler is told about it rather
+# than having to guess.
+User-agent: *
+Allow: /
+
+Sitemap: https://gitguy268-textarea-plus.vercel.app/sitemap.xml
