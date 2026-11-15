@@ -455,6 +455,41 @@ Whisper large v3 turbo (1.65 GB, more accurate, on the GPU). Turbo can only be
 picked where the browser has WebGPU with half precision, as recent Chrome,
 Edge and Brave on a Mac do.
 
+**Your own GGUF model** is the third choice in that picker. **Choose GGUF
+files…** takes two files from a [llama.cpp](https://github.com/ggml-org/llama.cpp)
+speech model: the model and its `mmproj` projector, for example both Q8_0 files
+from [ggml-org/Qwen3-ASR-0.6B-GGUF](https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF)
+(about 1 GB together). This also works on the online copies, which leave out
+the built-in Whisper models.
+
+<details>
+<summary>How your own model is kept and run</summary>
+
+- **Kept.** In Chrome, Edge and other Chromium browsers the files stay where
+  they are: the app remembers a link to them, and the browser asks once per
+  session before reading them again. Elsewhere (Firefox, Safari, Brave with
+  its file picker switched off) they are copied into this site's private
+  storage, which costs their size in disk space once. **Forget** removes the
+  link or the copy; your own files are never touched.
+- **Checked.** Each file's GGUF header is read before anything loads: you need
+  one model and one projector that takes audio, and the panel says which is
+  missing.
+- **Run.** The vendored wllama (llama.cpp for the browser) loads both files and
+  is sent the audio as WAV, thirty seconds at a time. Qwen3-ASR 0.6B
+  transcribes an eleven-second clip in about three seconds in Chrome on an
+  Apple M4, and about eleven in Firefox. The vendored llama.cpp also has the
+  audio projectors for Voxtral, Qwen2.5-Omni, LFM2-Audio and Granite Speech,
+  so their GGUF pairs should load the same way; only Qwen3-ASR 0.6B has been
+  tested. A single-file GGUF made for transcribe.cpp, or a whisper.cpp
+  `ggml-….bin`, is not a llama.cpp pair, and the panel says so.
+- **Isolation.** llama.cpp decodes audio on helper threads, and WebAssembly
+  only runs threads on a cross-origin isolated page. The server
+  (`tests/serve.js`, `vercel.json`) sends the two headers that make it so;
+  GitHub Pages can't send headers, so the service worker adds them, and the
+  very first visit there needs one reload before a GGUF model can run.
+
+</details>
+
 <details>
 <summary>The model, the download, the speed and the microphone</summary>
 
@@ -640,6 +675,36 @@ The editor follows your system setting, as it always has. The menu can override
 that with a light or dark theme, and the choice lives in the query string
 (`?theme=dark`) rather than in storage, so a link carries it and nothing is
 remembered behind your back. Back on "system" the parameter goes away again.
+
+**Customize** in the menu changes the whole look, live, the way Arc themes a
+space:
+
+- **Look:** Classic, Windows 97 (grey bevels, navy title bars, Tahoma and a
+  Notepad-style page), Xiao (warm paper, red ink, Bricolage Grotesque and
+  Junicode, from the [Xiao](https://github.com/Gitguy268/xiao) browser) or
+  Liquid glass (frosted panels over soft colour). Every look keeps your light
+  or dark choice.
+- **Colours:** a preset, or one to three colours of your own, drawn as a
+  gradient behind the note with an angle, a strength and film grain. The
+  strength is capped wherever your text would drop below 4.5:1 contrast, and
+  the panel tells you when it is. The first colour becomes the accent.
+- **Theme code:** *Copy theme code* gives one line (`textarea-theme:…`) that
+  sets the same look and colours in another browser.
+- **Your own CSS:** a stylesheet for this browser only.
+
+<details>
+<summary>Where Customize keeps things, and what it never does</summary>
+
+The look, the colours and your CSS are three `localStorage` keys
+(`textarea:look`, `textarea:custom-theme`, `textarea:custom-css`). None of them
+goes into a note, its front matter or a share link, so opening someone's note
+never changes your look, and your CSS never leaves this browser. A theme code
+is read through the same check as storage: it can only pick one of the four
+looks and colours written as `#rrggbb`. People who ask their system for more
+contrast or its own colours get plain panels and no gradient whatever the
+choice; less transparency turns Liquid glass opaque.
+
+</details>
 
 <details>
 <summary>Accent, fonts and the custom font shelf</summary>

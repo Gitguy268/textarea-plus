@@ -2077,6 +2077,29 @@
     flex: 1;
   }
 
+  /* The reader's own GGUF model: the two files, a hint, and two buttons. */
+  .speech-gguf {
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--overlay);
+  }
+
+  .speech-gguf-files {
+    margin: 0 0 4px;
+    overflow-wrap: anywhere;
+  }
+
+  .speech-gguf-hint {
+    margin: 0 0 8px;
+    font-size: 0.85em;
+    opacity: 0.75;
+  }
+
+  .speech-gguf .speech-actions {
+    margin-bottom: 0;
+  }
+
   .speech-organise {
     margin-top: 8px;
     width: 100%;
@@ -3175,6 +3198,690 @@
     flex: 1 1 200px;
   }
 
+  /* ------------------------------------------------------ looks and colours
+
+     Set from the Customize panel (lib/customize.js). `data-look` on <html>
+     picks a look; `data-custom` says the reader chose colours, which arrive
+     as --custom-* properties already checked for contrast. Every look keeps
+     the light/dark choice from the menu. A reader who asks the system for
+     more contrast or its own colours gets the plain panels back. */
+
+  @font-face {
+    font-family: 'Bricolage Grotesque';
+    src: url('vendor/fonts/bricolage-grotesque-latin-wght-normal.woff2') format('woff2');
+    font-weight: 200 800;
+    font-display: swap;
+  }
+
+  @font-face {
+    font-family: 'Junicode';
+    src: url('vendor/fonts/junicode-italic-latin.woff2') format('woff2');
+    font-style: italic;
+    font-display: swap;
+  }
+
+  /* The colours behind the note: a gradient and a little grain, under
+     everything. The strength was capped per theme so the text keeps 4.5:1. */
+  html[data-custom] {
+    --custom-strength: var(--custom-strength-light);
+    --outline: var(--custom-accent-light);
+    --link: var(--custom-accent-light);
+
+    @media (prefers-color-scheme: dark) {
+      --custom-strength: var(--custom-strength-dark);
+      --outline: var(--custom-accent-dark);
+      --link: var(--custom-accent-dark);
+    }
+
+    &[data-theme='light'] {
+      --custom-strength: var(--custom-strength-light);
+      --outline: var(--custom-accent-light);
+      --link: var(--custom-accent-light);
+    }
+
+    &[data-theme='dark'] {
+      --custom-strength: var(--custom-strength-dark);
+      --outline: var(--custom-accent-dark);
+      --link: var(--custom-accent-dark);
+    }
+  }
+
+  html[data-custom] body::before,
+  html[data-look='glass']:not([data-custom]) body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  html[data-custom] body::before {
+    background: linear-gradient(var(--custom-angle), var(--custom-1), var(--custom-2) 50%, var(--custom-3));
+    opacity: var(--custom-strength);
+  }
+
+  html[data-custom] body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: calc(var(--custom-grain) * 0.3);
+    mix-blend-mode: overlay;
+  }
+
+  /* Plus's sidebar and tabs take the colours, the way Arc's sidebar takes a
+     space's theme: see-through over the gradient instead of opaque. */
+  html[data-custom].shell #sidebar {
+    background-color: color-mix(in srgb, var(--elevated) 40%, transparent);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  html[data-custom].shell #tabs {
+    background-color: color-mix(in srgb, var(--elevated) 60%, transparent);
+  }
+
+  @media (prefers-contrast: more), (forced-colors: active) {
+    html[data-custom] body::before,
+    html[data-custom] body::after,
+    html[data-look='glass'] body::before {
+      display: none;
+    }
+  }
+
+  /* ------------------------------------------------------- Windows 97 look */
+  html[data-look='win97'] {
+    --win-face: #c0c0c0;
+    --win-light: #ffffff;
+    --win-hi: #dfdfdf;
+    --win-shadow: #808080;
+    --win-dark: #0a0a0a;
+    --win-title: #000080;
+    --win-title-text: #ffffff;
+    --win-field: #ffffff;
+    --win-raised:
+      inset -1px -1px var(--win-dark), inset 1px 1px var(--win-light),
+      inset -2px -2px var(--win-shadow), inset 2px 2px var(--win-hi);
+    --win-sunken:
+      inset -1px -1px var(--win-light), inset 1px 1px var(--win-shadow),
+      inset -2px -2px var(--win-hi), inset 2px 2px var(--win-dark);
+    --win-font: Tahoma, 'MS Sans Serif', 'Microsoft Sans Serif', Geneva, Verdana, sans-serif;
+    background-color: #ffffff;
+    --elevated: var(--win-face);
+    --text: #000000;
+    --link: #0000ee;
+    --outline: #000080;
+    --overlay: rgba(0, 0, 0, 0.08);
+    --note-font: 'Fixedsys Excelsior', 'Lucida Console', 'Courier New', monospace;
+
+    @media (prefers-color-scheme: dark) {
+      --win-face: #2b2b2b;
+      --win-light: #6a6a6a;
+      --win-hi: #4a4a4a;
+      --win-shadow: #1a1a1a;
+      --win-dark: #000000;
+      --win-title: #800080;
+      --win-field: #000000;
+      background-color: #000000;
+      --text: #ffffff;
+      --link: #ffff00;
+      --outline: #ffff00;
+      --overlay: rgba(255, 255, 255, 0.1);
+    }
+
+    &[data-theme='light'] {
+      --win-face: #c0c0c0;
+      --win-light: #ffffff;
+      --win-hi: #dfdfdf;
+      --win-shadow: #808080;
+      --win-dark: #0a0a0a;
+      --win-title: #000080;
+      --win-field: #ffffff;
+      background-color: #ffffff;
+      --text: #000000;
+      --link: #0000ee;
+      --outline: #000080;
+      --overlay: rgba(0, 0, 0, 0.08);
+    }
+
+    &[data-theme='dark'] {
+      --win-face: #2b2b2b;
+      --win-light: #6a6a6a;
+      --win-hi: #4a4a4a;
+      --win-shadow: #1a1a1a;
+      --win-dark: #000000;
+      --win-title: #800080;
+      --win-field: #000000;
+      background-color: #000000;
+      --text: #ffffff;
+      --link: #ffff00;
+      --outline: #ffff00;
+      --overlay: rgba(255, 255, 255, 0.1);
+    }
+  }
+
+  html[data-look='win97'] ::selection {
+    background: var(--win-title);
+    color: var(--win-title-text);
+  }
+
+  html[data-look='win97'] :is(#menu, .dialog, #stats-panel, #backlinks-panel, #tasks-panel, #writing-panel, #speech-panel, #customize-panel, #sidebar) {
+    background: var(--win-face);
+    border-radius: 0;
+    box-shadow: var(--win-raised), 4px 4px 0 rgba(0, 0, 0, 0.25);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    font-family: var(--win-font);
+  }
+
+  html[data-look='win97'] #sidebar {
+    box-shadow: var(--win-raised);
+  }
+
+  html[data-look='win97'] #tabs {
+    background: var(--win-face);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-bottom: 2px solid var(--win-shadow);
+    font-family: var(--win-font);
+  }
+
+  html[data-look='win97'] :is(.writing-head, .dialog-title) {
+    margin: -6px -10px 10px;
+    padding: 3px 4px 3px 8px;
+    background: linear-gradient(90deg, var(--win-title), color-mix(in srgb, var(--win-title) 55%, #1084d0));
+    color: var(--win-title-text);
+  }
+
+  html[data-look='win97'] .dialog-title {
+    margin: 0 0 4px;
+    font: 700 13px / 1.4 var(--win-font);
+  }
+
+  html[data-look='win97'] .writing-title {
+    font: 700 13px / 1.4 var(--win-font);
+    opacity: 1;
+  }
+
+  html[data-look='win97'] .writing-close {
+    background: var(--win-face);
+    color: #000;
+    border-radius: 0;
+    box-shadow: var(--win-raised);
+  }
+
+  html[data-look='win97'] :is(.dialog-button, #menu .item) {
+    font: 400 13px / 1.2 var(--win-font);
+    border-radius: 0;
+  }
+
+  html[data-look='win97'] .dialog-button {
+    background: var(--win-face);
+    color: var(--text);
+    box-shadow: var(--win-raised);
+    padding: 7px 14px;
+  }
+
+  html[data-look='win97'] .dialog-button:active:not(:disabled) {
+    box-shadow: var(--win-sunken);
+  }
+
+  html[data-look='win97'] #menu .item:hover,
+  html[data-look='win97'] #menu .item:focus-within {
+    background: var(--win-title);
+    color: var(--win-title-text);
+  }
+
+  html[data-look='win97'] :is(input[type='text'], input[type='password'], input[type='search'], select, textarea, .dialog input) {
+    border-radius: 0;
+    border: none;
+    background: var(--win-field);
+    color: var(--text);
+    box-shadow: var(--win-sunken);
+    font-family: var(--win-font);
+  }
+
+  html[data-look='win97'] #button {
+    border-radius: 0;
+    background: var(--win-face);
+    color: #000;
+    box-shadow: var(--win-raised);
+  }
+
+  html[data-look='win97'] #notification {
+    border-radius: 0;
+    font-family: var(--win-font);
+  }
+
+  /* ----------------------------------------------------------- Xiao look */
+  html[data-look='xiao'] {
+    background-color: #eeeee7;
+    --elevated: #f7f7f2;
+    --text: #1d1d1b;
+    --link: #c4071d;
+    --outline: #e70923;
+    --overlay: rgb(29 29 27 / 0.06);
+    --xiao-rule: rgb(29 29 27 / 0.12);
+    --xiao-sans: 'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --xiao-serif: 'Junicode', 'Iowan Old Style', Georgia, serif;
+    --note-font: var(--xiao-sans);
+
+    @media (prefers-color-scheme: dark) {
+      background-color: #1b1b1b;
+      --elevated: #242422;
+      --text: #ececE4;
+      --link: #f36a52;
+      --overlay: rgb(236 236 228 / 0.06);
+      --xiao-rule: rgb(236 236 228 / 0.14);
+    }
+
+    &[data-theme='light'] {
+      background-color: #eeeee7;
+      --elevated: #f7f7f2;
+      --text: #1d1d1b;
+      --link: #c4071d;
+      --overlay: rgb(29 29 27 / 0.06);
+      --xiao-rule: rgb(29 29 27 / 0.12);
+    }
+
+    &[data-theme='dark'] {
+      background-color: #1b1b1b;
+      --elevated: #242422;
+      --text: #ececE4;
+      --link: #f36a52;
+      --overlay: rgb(236 236 228 / 0.06);
+      --xiao-rule: rgb(236 236 228 / 0.14);
+    }
+  }
+
+  html[data-look='xiao'] :is(#menu, .dialog, #stats-panel, #backlinks-panel, #tasks-panel, #writing-panel, #speech-panel, #customize-panel) {
+    border: 1px solid var(--xiao-rule);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.08);
+    font-family: var(--xiao-sans);
+  }
+
+  html[data-look='xiao'] :is(#sidebar, #tabs) {
+    font-family: var(--xiao-sans);
+    border-color: var(--xiao-rule);
+  }
+
+  html[data-look='xiao'] :is(.dialog-title, .writing-title) {
+    font: italic 400 20px / 1.2 var(--xiao-serif);
+    letter-spacing: -0.01em;
+    opacity: 1;
+  }
+
+  html[data-look='xiao'] :is(.dialog-button, #menu .item) {
+    font-family: var(--xiao-sans);
+  }
+
+  html[data-look='xiao'] .dialog-button {
+    font-weight: 500;
+    background: transparent;
+    border: 1px solid var(--xiao-rule);
+  }
+
+  html[data-look='xiao'] .dialog-button-primary {
+    background: var(--outline);
+    border-color: var(--outline);
+    color: #fff;
+  }
+
+  html[data-look='xiao'] :is(.md-h1, .md-h2) {
+    font-family: var(--xiao-serif);
+    font-style: italic;
+    font-weight: 400;
+  }
+
+  html[data-look='xiao'] #button {
+    background-color: var(--text);
+    color: var(--elevated);
+  }
+
+  /* --------------------------------------------------- Liquid glass look */
+  html[data-look='glass'] {
+    --lg-tint: 52%;
+    --lg-edge: rgba(255, 255, 255, 0.55);
+    --lg-glare: rgba(255, 255, 255, 0.5);
+    --lg-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 18px 44px rgba(0, 0, 0, 0.16);
+
+    @media (prefers-color-scheme: dark) {
+      --lg-tint: 58%;
+      --lg-edge: rgba(255, 255, 255, 0.22);
+      --lg-glare: rgba(255, 255, 255, 0.14);
+      --lg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 44px rgba(0, 0, 0, 0.55);
+    }
+
+    &[data-theme='light'] {
+      --lg-tint: 52%;
+      --lg-edge: rgba(255, 255, 255, 0.55);
+      --lg-glare: rgba(255, 255, 255, 0.5);
+      --lg-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 18px 44px rgba(0, 0, 0, 0.16);
+    }
+
+    &[data-theme='dark'] {
+      --lg-tint: 58%;
+      --lg-edge: rgba(255, 255, 255, 0.22);
+      --lg-glare: rgba(255, 255, 255, 0.14);
+      --lg-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 44px rgba(0, 0, 0, 0.55);
+    }
+  }
+
+  /* Glass needs something behind it to bend: soft colour, unless the reader
+     chose their own. Kept light enough that body text stays above 4.5:1. */
+  html[data-look='glass']:not([data-custom]) body::before {
+    background:
+      radial-gradient(60vmax 50vmax at 8% 12%, rgb(90 160 255 / 0.30), transparent 60%),
+      radial-gradient(50vmax 45vmax at 92% 22%, rgb(255 120 190 / 0.24), transparent 60%),
+      radial-gradient(60vmax 50vmax at 60% 100%, rgb(80 220 190 / 0.22), transparent 60%);
+  }
+
+  html[data-look='glass'] :is(#menu, .dialog, #stats-panel, #backlinks-panel, #tasks-panel, #writing-panel, #speech-panel, #customize-panel) {
+    background:
+      linear-gradient(160deg, var(--lg-glare) 0%, transparent 38%),
+      color-mix(in srgb, var(--elevated) var(--lg-tint), transparent);
+    backdrop-filter: blur(18px) saturate(1.8);
+    -webkit-backdrop-filter: blur(18px) saturate(1.8);
+    border: 1px solid var(--lg-edge);
+    border-radius: 22px;
+    box-shadow: var(--lg-shadow), inset 0 1px 0 var(--lg-edge);
+  }
+
+  html[data-look='glass'] .dialog::backdrop {
+    background: rgba(0, 0, 0, 0.18);
+    backdrop-filter: blur(6px);
+  }
+
+  html[data-look='glass'].shell :is(#sidebar, #tabs) {
+    background: color-mix(in srgb, var(--elevated) var(--lg-tint), transparent);
+    backdrop-filter: blur(18px) saturate(1.8);
+    -webkit-backdrop-filter: blur(18px) saturate(1.8);
+    border-color: var(--lg-edge);
+  }
+
+  html[data-look='glass'] .dialog-button {
+    background: color-mix(in srgb, var(--elevated) 40%, transparent);
+    border: 1px solid var(--lg-edge);
+    box-shadow: inset 0 1px 0 var(--lg-edge);
+  }
+
+  html[data-look='glass'] .dialog-button-primary {
+    background: color-mix(in srgb, var(--outline) 85%, transparent);
+    color: #fff;
+  }
+
+  html[data-look='glass'] #button {
+    background:
+      linear-gradient(160deg, rgba(255, 255, 255, 0.55) 0%, transparent 50%),
+      color-mix(in srgb, #0569fa 70%, transparent);
+    backdrop-filter: blur(6px) saturate(1.6);
+    -webkit-backdrop-filter: blur(6px) saturate(1.6);
+    box-shadow: 0 6px 18px rgba(5, 105, 250, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  }
+
+  @media (prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active) {
+    html[data-look='glass'] :is(#menu, .dialog, #stats-panel, #backlinks-panel, #tasks-panel, #writing-panel, #speech-panel, #customize-panel),
+    html[data-look='glass'].shell :is(#sidebar, #tabs) {
+      background: var(--elevated);
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+  }
+
+  /* -------------------------------------------------- the Customize panel */
+  #customize-panel {
+    position: fixed;
+    right: 16px;
+    top: 68px;
+    z-index: 1;
+    width: min(340px, calc(100vw - 32px));
+    max-height: min(80dvh, 640px);
+    overflow-y: auto;
+    padding: 10px 16px 14px;
+    background: var(--elevated);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
+    color: var(--text);
+    font: 14px / 1.4 system-ui, sans-serif;
+  }
+
+  #customize-panel[hidden] {
+    display: none;
+  }
+
+  .customize-heading {
+    margin: 12px 0 6px;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    opacity: 0.65;
+  }
+
+  .customize-looks {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .customize-look {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    background: var(--overlay);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .customize-look[aria-checked='true'] {
+    border-color: var(--outline);
+  }
+
+  .customize-look:focus-visible {
+    outline: 2px solid var(--outline);
+    outline-offset: 2px;
+  }
+
+  .customize-look-swatch {
+    height: 38px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #ffffff 0 60%, #0569fa 60%);
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+  }
+
+  .customize-look[data-look='win97'] .customize-look-swatch {
+    border-radius: 0;
+    background: linear-gradient(#000080 0 10px, #c0c0c0 10px);
+    box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff;
+  }
+
+  .customize-look[data-look='xiao'] .customize-look-swatch {
+    background: linear-gradient(135deg, #eeeee7 0 62%, #e70923 62%);
+  }
+
+  .customize-look[data-look='glass'] .customize-look-swatch {
+    background:
+      linear-gradient(160deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.2) 60%),
+      linear-gradient(120deg, #5aa0ff, #ff78be 60%, #50dcbe);
+  }
+
+  .customize-look-label {
+    font-size: 13px;
+  }
+
+  .customize-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  .customize-preset {
+    width: 30px;
+    height: 30px;
+    border: 2px solid var(--elevated);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--overlay);
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .customize-preset-none {
+    width: auto;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: var(--overlay);
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+  }
+
+  .customize-stops {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .customize-stops:empty {
+    display: none;
+  }
+
+  .customize-stop {
+    position: relative;
+  }
+
+  .customize-stop input[type='color'] {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+  }
+
+  .customize-stop input[type='color']::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  .customize-stop input[type='color']::-webkit-color-swatch {
+    border: 2px solid var(--elevated);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--overlay);
+  }
+
+  .customize-stop input[type='color']::-moz-color-swatch {
+    border: 2px solid var(--elevated);
+    border-radius: 50%;
+  }
+
+  .customize-stop-remove {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--text);
+    color: var(--elevated);
+    cursor: pointer;
+  }
+
+  .customize-add {
+    width: 100%;
+    margin-bottom: 8px;
+  }
+
+  .customize-slider {
+    display: grid;
+    grid-template-columns: 64px 1fr 44px;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+  }
+
+  .customize-slider input {
+    width: 100%;
+    accent-color: var(--outline);
+  }
+
+  .customize-value {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+  }
+
+  .customize-note {
+    margin: 4px 0;
+    font-size: 12px;
+    opacity: 0.75;
+  }
+
+  .customize-note:empty {
+    display: none;
+  }
+
+  .customize-code {
+    display: flex;
+    gap: 6px;
+  }
+
+  .customize-code .dialog-button {
+    padding: 8px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .customize-code-input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 10px;
+    border: 1px solid var(--overlay);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: 12px ui-monospace, monospace;
+  }
+
+  .customize-advanced {
+    margin-top: 12px;
+  }
+
+  .customize-advanced summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .customize-css {
+    box-sizing: border-box;
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px;
+    border: 1px solid var(--overlay);
+    border-radius: 8px;
+    background: transparent;
+    color: inherit;
+    font: 12px / 1.5 ui-monospace, monospace;
+    resize: vertical;
+  }
+
+  .customize-reset {
+    width: 100%;
+    margin-top: 10px;
+  }
 </style>
 <!-- role=textbox with aria-multiline is the correct mapping for a
      contenteditable element, and it needs a name to be announced at all. -->
@@ -3335,6 +4042,12 @@
     </svg>
     <span id="menu-columns-label">Two column PDFs: on</span>
   </button>
+  <button id="menu-customize" class="item" type="button" role="menuitem">
+    <svg aria-hidden="true" focusable="false" width="22" height="22">
+      <use xlink:href="#icon-palette"></use>
+    </svg>
+    Customize
+  </button>
   <button id="menu-settings" class="item" type="button" role="menuitem">
     <svg aria-hidden="true" focusable="false" width="22" height="22">
       <use xlink:href="#icon-settings"></use>
@@ -3393,6 +4106,13 @@
     <path d="M7 10v-2a5 5 0 0 1 9.6 -2"/>
     <rect x="5" y="10" width="14" height="10" rx="2"/>
     <path d="M12 14v2"/>
+  </symbol>
+  <symbol id="icon-palette" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 21a9 9 0 0 1 0 -18c4.97 0 9 3.582 9 8c0 1.06 -.474 2.078 -1.318 2.828c-.844 .75 -1.989 1.172 -3.182 1.172h-2.5a2 2 0 0 0 -1 3.75a1.3 1.3 0 0 1 -1 2.25"/>
+    <path d="M7.5 10.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/>
+    <path d="M11.5 7.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/>
+    <path d="M15.5 10.5a1 1 0 1 0 2 0a1 1 0 1 0 -2 0"/>
   </symbol>
   <symbol id="icon-theme" viewBox="0 0 20 20" fill="currentColor" stroke="none">
     <path d="M8.502 5.833c0-.902.149-1.771.42-2.584a6.835 6.835 0 1 0 6.672 10.677 8.164 8.164 0 0 1-7.092-8.093m1.33 0a6.835 6.835 0 0 0 6.835 6.835h.049a.665.665 0 0 1 .634.882l-.034.08A8.165 8.165 0 1 1 9.941 1.835l.086.004a.665.665 0 0 1 .515.956 6.8 6.8 0 0 0-.71 3.037"/>

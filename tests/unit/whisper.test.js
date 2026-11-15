@@ -28,8 +28,9 @@ const EXPECTED_FILES = {
 }
 
 test('the panel offers exactly the models the engine knows how to run', () => {
+  // The reader's own GGUF model is run by lib/gguf-engine.js, not Whisper.
   assert.deepEqual(
-    OFFERED.map(({id}) => id),
+    OFFERED.filter(({own}) => !own).map(({id}) => id),
     Object.keys(MODELS),
   )
   assert.deepEqual(Object.keys(EXPECTED_FILES), Object.keys(MODELS))

@@ -3,6 +3,7 @@
 // lives in lib/ - see docs/ARCHITECTURE.md for which file owns what.
 
 import {applyAppearance, isCustomFont, readAppearance} from './lib/appearance.js'
+import {applyCustomization, readCustomization} from './lib/customize.js'
 import {
   applyBacklinksPreference,
   applyStatsPreference,
@@ -74,6 +75,9 @@ function init() {
   // applied at boot, next to the theme, so a stored choice never flashes
   // its absence before the override lands.
   applyAppearance(document.documentElement, readAppearance(localStorage))
+  // The look, the colours behind the note and the reader's own CSS, from the
+  // Customize panel - the same moment, for the same reason.
+  applyCustomization(document.documentElement, readCustomization(localStorage))
   applyFontPreference()
   initDragAndDrop()
   initFileHandling()

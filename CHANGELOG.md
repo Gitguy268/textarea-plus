@@ -11,6 +11,9 @@ what is on `main` right now.
 
 ### Added
 
+- **Your own GGUF speech model.** Speech to text takes a llama.cpp speech model and its mmproj projector, such as [ggml-org/Qwen3-ASR-0.6B-GGUF](https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF), and runs it on your machine through the vendored wllama. Chromium browsers link the files where they are; other browsers keep a copy in the site's private storage. Works on the online copies too.
+- **Customize** (menu): four looks (Classic, Windows 97, Xiao, Liquid glass), Arc-style colours behind the note (one to three colours, angle, strength, grain) with the strength capped for 4.5:1 text contrast, theme codes to copy between browsers, and your own CSS for this browser only.
+- The page is now cross-origin isolated (`Cross-Origin-Embedder-Policy: require-corp`, added by the service worker on GitHub Pages), which lets WebAssembly run threads.
 - **Organise by voice** (Settings, off as it ships): after speech to text, *Organise into a board* sends what you said, with this note or all your notes, through MiniCPM5 2B on your machine. The answer is a new note, `# Organised <date>`, with a `##` topic per card, `- [ ]` and `- [x]` tasks and `- ?` questions, drawn as a board with a progress bar per topic. Ticking a box on the board ticks it in the note. The code is shared byte for byte with Xiao's voice organiser.
 - **Sticky note** (Settings, off as it ships; Chrome, Edge and Brave): the note in a small square window that stays on top of other windows. It is the same editor moved there, not a copy.
 - In Firefox the writing models run on the processor: its WebGPU ran MiniCPM5 ten times slower (0.45 against 4.7 tokens a second).
@@ -72,142 +75,6 @@ what is on `main` right now.
   box that saves a jotted note without putting the open one away.
 - **Saved filters**: whatever is in the search box, kept as a chip.
 - The round menu button is glass too, from the first paint.
-
-### Changed
-
-- The vendored wllama is now 3.11.0 built from `master` (`1a5687ef7c`), the
-  first build that loads MiniCPM-V 4.7. It runs the writing models on WebGPU
-  when the browser has it.
-
-- Nineteen icons are now [Aiko](https://github.com/tw93/aiko)'s filled
-  glyphs. GitHub, unlock, columns, zip, save, the QR code and the Glass drop
-  keep their Tabler and Material icons, because Aiko doesn't have them.
-  `tests/unit/icons.test.js` pins every Aiko path by hash.
-- The speech engine's worker imports its libraries inside the load. A file
-  that fails to import is now reported by name, where it used to be "the
-  speech engine could not start". The worker stitches each model file only
-  when the runtime asks for it and lets go of it once handed over, where it
-  used to stitch every file first and hold them all until the load ended.
-- A microphone that macOS withholds from the browser is now explained, with
-  where to allow it. So is one that's busy in another app. Both used to show
-  a bare error.
-- **Liquid glass reads as glass.** The panels had the refraction and nothing
-  else, which over a plain page looked like a slightly see-through box. They
-  now carry a material - a fill that thins towards one corner, a bevel lit
-  from the top left, a glare - ported from LiquidGlass-UI's stylesheet, with a
-  stronger interior blur and prism fringe from the module. A label still
-  reads 4.5:1 with the note's ink directly behind it, which has its own test.
-  `prefers-contrast: more` and forced colours get the plain panels back.
-- The search box in My documents understands `#tag`, `on:YYYY-MM-DD`,
-  `is:pinned` and `is:archived` alongside the phrase it always searched for.
-
-### Improvements over textarea-master
-
-This repository is a rebuild of `textarea-master` at revision `a70829e`. It
-began as a byte-for-byte copy; every one of the original's 250 unit tests and
-105 browser tests is still here and passing, and
-[docs/PARITY.md](docs/PARITY.md) maps each feature to the test that guards
-it. Storage keys, database names, cache names and both link formats are
-unchanged, so existing notes, settings and links carry over. What changed:
-
-**Lists and tasks**
-
-- A `- ` at the start of a line is no longer drawn as a bullet; `* ` and `+ `
-  still are. Typing `-- ` and a space writes `- [ ] ` and switches Tasks on,
-  and a task line shows its checkbox without a bullet beside it.
-
-**Structure**
-
-- `app.js` was 2,850 lines holding the editor, the URL, the menu, every
-  preference and the boot. It is now a 190-line entry, and the work lives in
-  thirteen modules under `lib/` — `note`, `editor`, `features`, `menu`,
-  `files`, `shortcuts`, `prefs`, `settings-rows`, `notify`, `signals`, `sync`,
-  `filename`, `read-note` — with no module importing the entry and no two
-  importing each other.
-- The thirty preference get/set pairs share one helper in `lib/prefs.js`,
-  which is unit tested; a stored value that is not one the app writes can no
-  longer flip a default.
-
-**Performance** (same machine, `node tests/perf.js 1024`)
-
-- Eager JavaScript at boot: 262.7 kB → 182.1 kB, with five features added.
-  A session that only types no longer parses the PDF and ZIP readers, the
-  nine export formats, the Settings rows or the folder-sync engine: each
-  arrives with the first file opened, the first export, the Settings panel,
-  or a folder that is remembered or being connected.
-- Re-highlighting a 1 MB note: 108.1 ms → 42.4 ms (median of five). The
-  renderer used to empty the article and rebuild all of it on every
-  highlight; it now swaps only the stretch of nodes that differs.
-- `tests/perf.js` also times the highlight after a single keystroke, which
-  is what typing actually costs: 36.4 ms on that 1 MB note, almost all of it
-  re-reading the text. The note is still parsed whole on every pause; at
-  that size it is two frames, and it was left alone.
-
-**Robustness**
-
-- A tab hidden or closed inside the 500 ms autosave pause no longer loses
-  what was typed in it: the library row is written and committed in the same
-  turn as `pagehide` / `visibilitychange`, which the browser finishes after
-  the page is gone. Tested by really closing a tab mid-keystroke.
-  Twenty real closes kept the last words twenty times in each of Chromium,
-  Firefox and WebKit.
-- A tab that comes back on the same address after closing that way reopens
-  on the text it had, in the same library row, rather than on the older text
-  in its URL with the newer text left as a second note. Verified on reload;
-  a restored session depends on the browser reporting itself as one.
-- A library that stops accepting writes — a full quota, blocked storage —
-  says so once, where it used to fail silently.
-- A link is called long at three quarters of the URL limit, while it still
-  works, in addition to the existing warning past the limit.
-- The reason a writing-tools Run failed stays on screen; it used to be wiped
-  the moment the Run ended.
-
-**Accessibility**
-
-- axe-core runs in the browser suite over the note, the menu, every dialog,
-  find and the switcher, in both themes, at WCAG 2.x A and AA with no rule
-  switched off. Fixed to get there: the page declared no language; hint
-  text, placeholders and card dates were under 4.5:1 on the light theme;
-  document cards had an accessible name that did not contain their visible
-  text.
-- Menu rows keep their height and the menu scrolls. On a short window the
-  twenty rows were squeezed to 24px each and the last was cut off.
-- A `main` landmark around the note, a `prefers-reduced-motion` rule (there
-  was none), and tests for keyboard reach and visible focus.
-
-**Other browsers**
-
-- The browser suite runs under Firefox and WebKit as well as Chromium
-  (`npm run test:browsers`, and a CI matrix): 94 and 93 tests pass, with the
-  tests of Chromium-only features skipped by name. The original was only
-  ever run in Chromium.
-
-**New, each behind its own preference**
-
-- A command palette on Cmd/Ctrl+Shift+P (off as it ships) listing every
-  visible menu row, plus find and the quick switcher.
-- My documents sorts by last edit, creation or title, and remembers.
-- A word-count goal, shown in the statistics panel only when one is set.
-- Backup can write the whole library as one Markdown file.
-- A print stylesheet: the note alone, black on white, with page margins.
-  The original only hid the menu button.
-
-**Writing tools**
-
-- The model download reports progress per megabyte instead of per 64 MiB
-  chunk, and can be cancelled.
-
-**Documentation**
-
-- `textarea:glass`, the liquid-glass switch's storage key, was documented
-  nowhere outside `lib/glass.js`; the README now lists every key.
-- `docs/ARCHITECTURE.md` said a save runs "a fifth of a second" after
-  typing. The code waits 500 ms, and the document now says so.
-- The README covers the alternatives to committing the model (Git LFS,
-  release assets).
-
-### Added
-
 - **One Export panel** with four destinations: save to a file, copy to the
   clipboard, a QR code, or an archive. File and clipboard share one format list
   and one converter, so what is copied is byte for byte what a download would
@@ -428,6 +295,137 @@ unchanged, so existing notes, settings and links carry over. What changed:
 
 ### Changed
 
+- `vendor/wllama/wllama.js` keeps four spare threads, so llama.cpp's audio decoder can start its helpers (see `vendor/README.md`).
+- The vendored wllama is now 3.11.0 built from `master` (`1a5687ef7c`), the
+  first build that loads MiniCPM-V 4.7. It runs the writing models on WebGPU
+  when the browser has it.
+
+- Nineteen icons are now [Aiko](https://github.com/tw93/aiko)'s filled
+  glyphs. GitHub, unlock, columns, zip, save, the QR code and the Glass drop
+  keep their Tabler and Material icons, because Aiko doesn't have them.
+  `tests/unit/icons.test.js` pins every Aiko path by hash.
+- The speech engine's worker imports its libraries inside the load. A file
+  that fails to import is now reported by name, where it used to be "the
+  speech engine could not start". The worker stitches each model file only
+  when the runtime asks for it and lets go of it once handed over, where it
+  used to stitch every file first and hold them all until the load ended.
+- A microphone that macOS withholds from the browser is now explained, with
+  where to allow it. So is one that's busy in another app. Both used to show
+  a bare error.
+- **Liquid glass reads as glass.** The panels had the refraction and nothing
+  else, which over a plain page looked like a slightly see-through box. They
+  now carry a material - a fill that thins towards one corner, a bevel lit
+  from the top left, a glare - ported from LiquidGlass-UI's stylesheet, with a
+  stronger interior blur and prism fringe from the module. A label still
+  reads 4.5:1 with the note's ink directly behind it, which has its own test.
+  `prefers-contrast: more` and forced colours get the plain panels back.
+- The search box in My documents understands `#tag`, `on:YYYY-MM-DD`,
+  `is:pinned` and `is:archived` alongside the phrase it always searched for.
+
+### Improvements over textarea-master
+
+This repository is a rebuild of `textarea-master` at revision `a70829e`. It
+began as a byte-for-byte copy; every one of the original's 250 unit tests and
+105 browser tests is still here and passing, and
+[docs/PARITY.md](docs/PARITY.md) maps each feature to the test that guards
+it. Storage keys, database names, cache names and both link formats are
+unchanged, so existing notes, settings and links carry over. What changed:
+
+**Lists and tasks**
+
+- A `- ` at the start of a line is no longer drawn as a bullet; `* ` and `+ `
+  still are. Typing `-- ` and a space writes `- [ ] ` and switches Tasks on,
+  and a task line shows its checkbox without a bullet beside it.
+
+**Structure**
+
+- `app.js` was 2,850 lines holding the editor, the URL, the menu, every
+  preference and the boot. It is now a 190-line entry, and the work lives in
+  thirteen modules under `lib/` — `note`, `editor`, `features`, `menu`,
+  `files`, `shortcuts`, `prefs`, `settings-rows`, `notify`, `signals`, `sync`,
+  `filename`, `read-note` — with no module importing the entry and no two
+  importing each other.
+- The thirty preference get/set pairs share one helper in `lib/prefs.js`,
+  which is unit tested; a stored value that is not one the app writes can no
+  longer flip a default.
+
+**Performance** (same machine, `node tests/perf.js 1024`)
+
+- Eager JavaScript at boot: 262.7 kB → 182.1 kB, with five features added.
+  A session that only types no longer parses the PDF and ZIP readers, the
+  nine export formats, the Settings rows or the folder-sync engine: each
+  arrives with the first file opened, the first export, the Settings panel,
+  or a folder that is remembered or being connected.
+- Re-highlighting a 1 MB note: 108.1 ms → 42.4 ms (median of five). The
+  renderer used to empty the article and rebuild all of it on every
+  highlight; it now swaps only the stretch of nodes that differs.
+- `tests/perf.js` also times the highlight after a single keystroke, which
+  is what typing actually costs: 36.4 ms on that 1 MB note, almost all of it
+  re-reading the text. The note is still parsed whole on every pause; at
+  that size it is two frames, and it was left alone.
+
+**Robustness**
+
+- A tab hidden or closed inside the 500 ms autosave pause no longer loses
+  what was typed in it: the library row is written and committed in the same
+  turn as `pagehide` / `visibilitychange`, which the browser finishes after
+  the page is gone. Tested by really closing a tab mid-keystroke.
+  Twenty real closes kept the last words twenty times in each of Chromium,
+  Firefox and WebKit.
+- A tab that comes back on the same address after closing that way reopens
+  on the text it had, in the same library row, rather than on the older text
+  in its URL with the newer text left as a second note. Verified on reload;
+  a restored session depends on the browser reporting itself as one.
+- A library that stops accepting writes — a full quota, blocked storage —
+  says so once, where it used to fail silently.
+- A link is called long at three quarters of the URL limit, while it still
+  works, in addition to the existing warning past the limit.
+- The reason a writing-tools Run failed stays on screen; it used to be wiped
+  the moment the Run ended.
+
+**Accessibility**
+
+- axe-core runs in the browser suite over the note, the menu, every dialog,
+  find and the switcher, in both themes, at WCAG 2.x A and AA with no rule
+  switched off. Fixed to get there: the page declared no language; hint
+  text, placeholders and card dates were under 4.5:1 on the light theme;
+  document cards had an accessible name that did not contain their visible
+  text.
+- Menu rows keep their height and the menu scrolls. On a short window the
+  twenty rows were squeezed to 24px each and the last was cut off.
+- A `main` landmark around the note, a `prefers-reduced-motion` rule (there
+  was none), and tests for keyboard reach and visible focus.
+
+**Other browsers**
+
+- The browser suite runs under Firefox and WebKit as well as Chromium
+  (`npm run test:browsers`, and a CI matrix): 94 and 93 tests pass, with the
+  tests of Chromium-only features skipped by name. The original was only
+  ever run in Chromium.
+
+**New, each behind its own preference**
+
+- A command palette on Cmd/Ctrl+Shift+P (off as it ships) listing every
+  visible menu row, plus find and the quick switcher.
+- My documents sorts by last edit, creation or title, and remembers.
+- A word-count goal, shown in the statistics panel only when one is set.
+- Backup can write the whole library as one Markdown file.
+- A print stylesheet: the note alone, black on white, with page margins.
+  The original only hid the menu button.
+
+**Writing tools**
+
+- The model download reports progress per megabyte instead of per 64 MiB
+  chunk, and can be cancelled.
+
+**Documentation**
+
+- `textarea:glass`, the liquid-glass switch's storage key, was documented
+  nowhere outside `lib/glass.js`; the README now lists every key.
+- `docs/ARCHITECTURE.md` said a save runs "a fifth of a second" after
+  typing. The code waits 500 ms, and the document now says so.
+- The README covers the alternatives to committing the model (Git LFS,
+  release assets).
 - **Licence files for everything that is not this project's own code.** The
   character maps and standard fonts inside the vendored pdf.js now carry their
   own licence files, llama.cpp's MIT notice sits beside the wllama binaries,

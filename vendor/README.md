@@ -224,6 +224,18 @@ How it was built: `git clone https://github.com/ngxson/wllama && git checkout 1a
 then `npm ci && npm run build:wasm && npm run build` (the wasm step runs emscripten in Docker). `wllama.js` is
 `esm/index.min.js`, `wllama.wasm` is `src/wasm/wllama.wasm`, and the compat pair is `compat/wasm/wllama.{js,wasm}`.
 
+**One local change** in `wllama.js`: the thread pool is created with twice
+the threads llama.cpp is given, plus four
+(`new ProxyToWorker(h,this.useMultiThread?2*g+4:0,` where upstream has `g`).
+On a cross-origin isolated page llama.cpp runs threaded, and its pool keeps
+`g - 1` workers busy for the language model. The multimodal encoder (images
+for MiniCPM-V, audio for a GGUF speech model) starts another `g - 1` threads
+of its own, and the audio decoder (`mtmd-audio.cpp`) three more for the
+spectrogram. A WebAssembly thread can only start on a worker that already
+exists, so with upstream's pool those threads wait forever and the request
+hangs without an error. Re-apply this after refreshing the bundle;
+`lib/gemma.js` (Describe image) and `lib/gguf-engine.js` depend on it.
+
 Nothing here loads until the reader presses **Run** in the writing tools:
 that press fetches `lib/gemma.js`, which fetches and verifies the model in
 `../models/` and only then imports `wllama.js`, its worker and its wasm. The worker code
@@ -364,6 +376,21 @@ SVG in `index.html`:
 | [Aiko](https://github.com/tw93/aiko) (`assets/icons.svg` at `6ae2c093`) | Nineteen of the icons: the menu, close, delete, pin and archive | MIT (see `icons/LICENSE-aiko`) |
 | [Tabler Icons](https://github.com/tabler/tabler-icons) | GitHub, unlock, columns, zip and save, which Aiko has no icon for | MIT (see `icons/LICENSE-tabler`) |
 | [Material Symbols](https://github.com/google/material-design-icons) | QR code and the Glass drop | Apache-2.0 (see `icons/LICENSE-material-symbols`) |
+
+## `fonts/`
+
+| | |
+|---|---|
+| Fonts | [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) (variable, Latin subset) and [Junicode](https://github.com/psb1558/Junicode-font) (italic, Latin subset) |
+| License | SIL Open Font License 1.1 (`fonts/OFL-Bricolage-Grotesque.txt`, `fonts/OFL-Junicode.txt`) |
+
+| Path | Size | Purpose |
+|---|---|---|
+| `bricolage-grotesque-latin-wght-normal.woff2` | 41 KB | The Xiao look's text and interface face |
+| `junicode-italic-latin.woff2` | 24 KB | The Xiao look's headings and panel titles |
+
+The same two files the Xiao browser ships. They load only while the Xiao look
+is chosen in Customize, through `@font-face` rules in `index.html`.
 
 ## Refreshing
 

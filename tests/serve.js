@@ -26,6 +26,13 @@ const ROOT = resolve(import.meta.dirname, '..')
 // origin, named; no wildcard and no second host, which the header test
 // pins by comparing the whole directive.
 //
+// `cross-origin-embedder-policy` with the opener policy makes the page
+// cross-origin isolated, which is what lets WebAssembly run threads: a GGUF
+// speech model decodes its audio on helper threads and cannot start without
+// them. Nothing this app loads comes from another origin without CORS, so
+// require-corp costs nothing. GitHub Pages cannot send headers; sw.js adds
+// the same two there.
+//
 // `microphone=(self)` in permissions-policy is speech to text: Record asks
 // for the microphone, on this origin and no frame inside it. `camera=(self)` is
 // Send to a device scanning the other device's code. Everything else
@@ -39,6 +46,7 @@ export const HEADERS = {
   'permissions-policy':
     'camera=(self), microphone=(self), geolocation=(), payment=(), usb=(), browsing-topics=()',
   'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-embedder-policy': 'require-corp',
   'strict-transport-security': 'max-age=63072000; includeSubDomains',
 }
 
