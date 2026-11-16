@@ -7221,7 +7221,7 @@ peerToPeer('Send to a device carries a note to another tab over WebRTC, after it
     await sendPanel.getByRole('button', {name: 'Copy link'}).click()
     const link = await sender.evaluate(() => globalThis.__copied)
     // Made on localhost, so it points a phone at the deployed copy.
-    assert.match(link, /^https:\/\/gitguy268-textarea\.vercel\.app\/#rtc=1o[A-Za-z0-9_-]+$/)
+    assert.match(link, /^https:\/\/gitguy268-textarea-plus\.vercel\.app\/#rtc=1o[A-Za-z0-9_-]+$/)
 
     receiver = await tab('/' + link.slice(link.indexOf('#')))
     const receivePanel = receiver.locator('dialog.dialog-nearby')
