@@ -1047,8 +1047,8 @@ transformers.js (`Apache-2.0`) carry their own
 licence files under `vendor/`. The models in `models/` are not MIT: Gemma is
 under the [Gemma Terms of Use](models/GEMMA_TERMS.md) and its
 [Prohibited Use Policy](models/GEMMA_PROHIBITED_USE_POLICY.md), Whisper small is
-[Apache-2.0](models/whisper-small-2d67713f/LICENSE), and Whisper large v3
-turbo is [MIT](models/whisper-large-v3-turbo-efd60f61/LICENSE). Most icons are
+[Apache-2.0](models/whisper-small-2d67713f/README.md#licence), and Whisper large v3
+turbo is [MIT](models/whisper-large-v3-turbo-efd60f61/README.md#licence). Most icons are
 [Aiko](https://github.com/tw93/aiko) (`MIT`). The QR code and the Glass drop
 come from Google's [Material Symbols](https://fonts.google.com/icons)
 (`Apache-2.0`), and GitHub, unlock, columns, zip and save are from

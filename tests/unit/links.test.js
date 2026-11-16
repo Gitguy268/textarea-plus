@@ -46,8 +46,6 @@ test('every relative link in the documentation lands on a file', async () => {
     for (const link of linksIn(text)) {
       if (isExternal(link) || link.startsWith('#')) continue
       const [path] = link.split('#')
-      // A model directory holds only its README here; its other files arrive with the model.
-      if (/^models\/[^/]+\//.test(path) && !(await exists(path.replace(/[^/]+$/, 'manifest.json')))) continue
       assert.ok(await exists(path), `${doc} links at ${link}, which is not in the repository`)
     }
   }
